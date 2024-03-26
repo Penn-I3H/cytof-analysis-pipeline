@@ -1,0 +1,14 @@
+version: '3.9'
+
+services:
+  
+  cytof-analysis-pipeline-task:
+    env_file:
+      - dev.env
+    image: cytof-analysis-pipeline
+    volumes:
+      - ./data:/service/data
+    container_name: cytof-analysis-pipeline
+    build:
+      context: .
+      dockerfile: ./Dockerfile # change to Dockerfile on Linux
