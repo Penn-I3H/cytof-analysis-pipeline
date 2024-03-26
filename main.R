@@ -19,8 +19,7 @@ create_dirs(dir_out)
 ### later we can parallelize
 lapply(files, analyze_cytof_file,
        dir_in=dir_in, dir_out=dir_out,
-       defs=defs_major, defs_myel=defs_myel,
-       defs_tcell=defs_tcell, cols=cols)
+       cols=cols)
 
 
 

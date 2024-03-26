@@ -7,13 +7,13 @@
 #' @param dir_in A path to read fcs files from.
 #' @param dir_out A path to write output.
 #' @param cols Columns to use in analysis.
-#' @param defs Model definitions for main cell types.
-#' @param defs_tcell Model definitions for T cell subtypes.
-#' @param defs_myeloid Model definitions for monocytes and DCs.
 #' @returns Nothing; all output written to file.
 #' @export
-analyze_cytof_file <- function(file, dir_in, dir_out, cols,
-                               defs, defs_tcell, defs_myeloid) {
+analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
+
+  dir_in <- paste0(dir_in, "/")
+  dir_out <- paste0(dir_out, "/")
+
   set.seed(0)
   path <- paste0(dir_in, file)
   fn <- file %>%
@@ -45,7 +45,7 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols,
   mat <- data.matrix(df) %>% scale_data()
   centroids_sc <- get_medians(mat, clustering)
 
-  labels <- get_labels_with_doublets_mar(clustering, df, gr, defs, centroids_sc)
+  labels <- get_labels_with_doublets_mar(clustering, df, gr, defs_major, centroids_sc)
 
   rownames(centroids) <- rownames(centroids_sc) <- levels(clustering) <- labels
 
@@ -53,7 +53,7 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols,
   cell_type <- as.character(cl_tmp) %>% str_split(fixed(".")) %>% sapply("[",1)
 
   mat <- as.matrix(df) %>% scale_data()
-  ypred <- label_clusters_score_opt(mat, defs, mdipa_main = FALSE, return_ypred = TRUE)
+  ypred <- label_clusters_score_opt(mat, defs_major, mdipa_main = FALSE, return_ypred = TRUE)
   pred <- colnames(ypred)[unname(apply(ypred, 1, which.max))]
   conf <- apply(ypred, 1, max)
 
