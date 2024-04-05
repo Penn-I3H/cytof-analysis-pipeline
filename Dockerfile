@@ -19,6 +19,10 @@ RUN Rscript -e "install.packages(c('BH'), Ncpus = 10, repos = 'https://cloud.r-p
 RUN Rscript -e "install.packages(c('tidyverse'), Ncpus = 10, dependencies=TRUE)"
 RUN Rscript -e "library(tidyverse)" # sanity check
 
+# fix issues with irlba
+RUN install.packages("Matrix", type = "source")
+RUN install.packages("irlba", type = "source")
+
 # various dependencies
 RUN Rscript -e "install.packages(c('KernSmooth', 'patchwork', 'uwot', 'ash', 'RColorBrewer', 'reshape2'), Ncpus = 10, dependencies=TRUE)"
 RUN Rscript -e "install.packages(c('Rcpp', 'RcppArmadillo', 'RcppHNSW'), Ncpus = 10, dependencies=TRUE)"
