@@ -19,7 +19,6 @@ RUN Rscript -e "install.packages(c('BH'), Ncpus = 10, repos = 'https://cloud.r-p
 RUN Rscript -e "install.packages(c('tidyverse'), Ncpus = 10, dependencies=TRUE)"
 RUN Rscript -e "library(tidyverse)" # sanity check
 
-# fix issues with irlba
 RUN Rscript -e "install.packages('Matrix', type = 'source')"
 RUN Rscript -e "install.packages('irlba', type = 'source')"
 
