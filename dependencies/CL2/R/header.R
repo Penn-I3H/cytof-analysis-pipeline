@@ -17,4 +17,5 @@
 #' @importFrom igraph graph_from_edgelist cluster_leiden V E E<-
 #' @importFrom igraph membership components as_edgelist topological.sort
 #' @importFrom patchwork wrap_plots plot_layout
+#' @importFrom sp point.in.polygon
 NULL

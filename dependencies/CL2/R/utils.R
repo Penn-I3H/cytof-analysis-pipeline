@@ -478,13 +478,13 @@ merge_clusters_c <- function(df, cols, clustering, min_bhatt=0.1) {
 
   bhatt_all <- bhatt(mat, length(cols), 101L)
   bhatt_summ <- bhatt_all %>%
-    reshape2::melt() %>%
+    melt() %>%
     filter(Var1 <= Var2) %>%
     mutate(value = replace_na(value, 0)) %>%
     filter(value >= min_bhatt)
   # filter(value >= 0.88^length(cols))
 
-  gr <- igraph::graph_from_edgelist(bhatt_summ %>%
+  gr <- graph_from_edgelist(bhatt_summ %>%
                                       select(Var1,Var2) %>%
                                       as.matrix(),
                                     directed=FALSE)
@@ -508,8 +508,8 @@ detect_doublets_apr <- function(df, cols, cell_type, thresh=5) {
 
   x_aug <- rbind(x_doub, x0[sel_for_aug,])
 
-  all_knn <- RcppHNSW::hnsw_knn(x_aug, k=15, distance= 'l2',
-                                n_threads=1, M=48)
+  all_knn <- hnsw_knn(x_aug, k=15, distance= 'l2',
+                      n_threads=1, M=48)
   n_nb_doub <- apply(all_knn$idx, 1, function(row) length(which(row<n_doub)))
 
 
@@ -919,7 +919,7 @@ gate_and_plot <- function(df, cell_type, thresh, dir_out, fn, save_plots=TRUE) {
 
 
 apply_gate <- function(df, params, gate) {
-  in_gate <- sp::point.in.polygon(df[[params[1]]],
+  in_gate <- point.in.polygon(df[[params[1]]],
                                   df[[params[2]]],
                                   gate[[params[1]]],
                                   gate[[params[2]]])

@@ -16,7 +16,8 @@ Imports:
   RcppHNSW,
   ash,
   reshape2,
-  patchwork
+  patchwork,
+  sp
 LinkingTo: Rcpp, RcppArmadillo
 License: GPL-3
 Encoding: UTF-8

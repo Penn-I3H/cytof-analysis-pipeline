@@ -23,7 +23,7 @@ RUN Rscript -e "install.packages('Matrix', type = 'source')"
 RUN Rscript -e "install.packages('irlba', type = 'source')"
 
 # various dependencies
-RUN Rscript -e "install.packages(c('KernSmooth', 'patchwork', 'uwot', 'ash', 'RColorBrewer', 'reshape2'), Ncpus = 10, dependencies=TRUE)"
+RUN Rscript -e "install.packages(c('KernSmooth', 'patchwork', 'uwot', 'ash', 'RColorBrewer', 'reshape2', 'sp'), Ncpus = 10, dependencies=TRUE)"
 RUN Rscript -e "install.packages(c('Rcpp', 'RcppArmadillo', 'RcppHNSW'), Ncpus = 10, dependencies=TRUE)"
 
 # igraph
