@@ -24,14 +24,15 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
 
   df <- path %>%
     read_data() %>%
-    as_tibble()
+    as_tibble() %>%
+    pregate_data(fn, dir_out)
 
   df <- df[sample(nrow(df), min(nrow(df),1e5)),]
   x_full <- df %>% as.matrix() %>% scale_data()
   x <- x_full[,cols]
   x <- df %>% select(all_of(cols)) %>% as.matrix() %>% scale_data()
 
-  n_sel <- min(nrow(df), 1e4)
+  n_sel <- min(nrow(df), 3e4)
   sel_umap <- sample(nrow(df), n_sel)
   df_um <- get_umap(df, x, sel_umap)
 
@@ -39,18 +40,21 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
   clustering_raw <- run_fastpg(x, resolution = 1, n_threads = 1)
   clustering <- merge_clusters_c(df, cols, clustering_raw, min_bhatt = 0.2)
 
-  gr <- detect_doublets(df, cols, clustering)
-
   centroids <- get_medians(df, clustering)
   mat <- data.matrix(df) %>% scale_data()
   centroids_sc <- get_medians(mat, clustering)
+  labels <- label_clusters_score_opt(centroids_sc, defs_major) %>% make.unique()
 
-  labels <- get_labels_with_doublets_mar(clustering, df, gr, defs_major, centroids_sc)
 
   rownames(centroids) <- rownames(centroids_sc) <- levels(clustering) <- labels
 
-  cl_tmp <- separate_doublets_feb(clustering, df, cols)
+  cl_tmp <- clustering
   cell_type <- as.character(cl_tmp) %>% str_split(fixed(".")) %>% sapply("[",1)
+
+  ######### new doublet detection #########
+
+  cell_type <- detect_doublets_apr(df, cols, cell_type)#, thresh = 4)
+  ##########################################
 
   mat <- as.matrix(df) %>% scale_data()
   ypred <- label_clusters_score_opt(mat, defs_major, mdipa_main = FALSE, return_ypred = TRUE)
@@ -64,21 +68,22 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
   df_clust <- df_um %>%
     mutate(clust = cl_tmp[sel_umap]) %>%
     mutate(ct = cell_type[sel_umap]) %>%
-    mutate(event = case_when(grepl("agg", clust) ~ "doublet",
-                             grepl("debris", clust) ~ "debris",
+    mutate(event = case_when(grepl("agg", ct) ~ "doublet",
+                             grepl("debris", ct) ~ "debris",
                              TRUE ~ "single cell"))
+  # write_csv(df_clust, file=paste0(dir_out, "tmp/df_clust_", fn, ".csv"), progress=FALSE)
 
-  p <- plot_umap_major(df_clust, fn)
-  ggsave(p, filename = paste0(dir_out, "umap_major/", fn, ".png"),
+  p_major <- plot_umap_major(df_clust, fn)
+  ggsave(p_major, filename = paste0(dir_out, "umap_major/", fn, ".png"),
          width=12, height=10)
 
-  p <- plot_dna_cd45(df_clust, fn)
-  ggsave(p, filename = paste0(dir_out, "DNA_CD45/", fn, ".png"),
-         width=9, height=7)
+  # p_debris <- plot_umap_debris(df_clust, fn)
+  # ggsave(p_debris, filename = paste0(dir_out, "umap_debris/", fn, ".png"),
+  #        width=16, height=10)
 
-  df_file <- tibble(cell_type=cell_type,
-                    pred = if_else(grepl("agg", cell_type), cell_type, pred))
-  write_csv(df_file, file=paste0(dir_out, "/files_labeled/", fn, ".csv"), progress=FALSE)
+  p_dna <- plot_dna_cd45(df_clust, fn)
+  ggsave(p_dna, filename = paste0(dir_out, "DNA_CD45/", fn, ".png"),
+         width=9, height=7)
 
   #### monocytes and DC
 
@@ -95,7 +100,7 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
     x_mono <- x_full[which(is_myel),cols_mono]
 
     set.seed(0)
-    sel_mono <- sample(nrow(x_mono), min(nrow(x_mono), 1e4))
+    sel_mono <- sample(nrow(x_mono), min(nrow(x_mono), 3e4))
     df_um_mono <- get_umap(df_mono, x_mono, sel_mono, "CD14", "CD294")
 
     clustering_mono_raw <- run_fastpg(x_mono, resolution = 1, n_threads = 1)
@@ -108,14 +113,16 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
 
     df_um_mono <- df_um_mono %>%
       mutate(clust = clustering_mono[sel_mono])
+    # write_csv(df_um_mono, file=paste0(dir_out, "tmp/df_mono_", fn, ".csv"), progress=FALSE)
 
-    p <- plot_umap_mono(df_um_mono, fn)
-    ggsave(p, filename=paste0(dir_out, "umap_myel/", fn, ".png"),
+    p_mono <- plot_umap_mono(df_um_mono, fn)
+    ggsave(p_mono, filename=paste0(dir_out, "umap_mono/", fn, ".png"),
            width=12, height=10)
 
     cell_type <- update_clustering(cell_type, clustering_mono, which(is_myel))
+  } else {
+    p_mono <- NULL
   }
-
 
   #### t cells
 
@@ -129,7 +136,7 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
     x_tcell <- x_full[which(is_tcell),cols_tcell]
 
     set.seed(0)
-    sel_tcell <- sample(nrow(x_tcell), min(nrow(x_tcell), 1e4))
+    sel_tcell <- sample(nrow(x_tcell), min(nrow(x_tcell), 3e4))
     df_um_tcell <- get_umap(df_tcell, x_tcell, sel_tcell, "CD4", "TCRgd")
 
     clustering_tcell_raw <- run_fastpg(x_tcell, resolution = 0.5, n_threads = 1)
@@ -142,14 +149,31 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
 
     df_um_tcell <- df_um_tcell %>%
       mutate(clust = clustering_tcell[sel_tcell])
+    # write_csv(df_um_tcell, file=paste0(dir_out, "tmp/df_tcell_", fn, ".csv"), progress=FALSE)
 
-    p <- plot_umap_tcell(df_um_tcell, fn)
-    ggsave(p, filename=paste0(dir_out, "umap_tcell/", fn, ".png"), width=12, height=10)
+    p_tcell <- plot_umap_tcell(df_um_tcell, fn)
+    ggsave(p_tcell, filename=paste0(dir_out, "umap_tcell/", fn, ".png"), width=12, height=10)
 
     cell_type <- update_clustering(cell_type, clustering_tcell, which(is_tcell))
+  } else {
+    p_tcell <- NULL
   }
 
+  df_file <- tibble(cell_type=cell_type)
+  write_csv(df_file, file=paste0(dir_out, "files_labeled/", fn, ".csv"), progress=FALSE)
+
+  ### gating secondary cell types
   gating_stuff(df, cell_type, dir_out, fn)
+
+  return(NULL)
+
+  # ### density estimates by cell type
+  # ### to be used later for QC
+  # valid_cell_types <- c("neutrophil", "eosinophil", "basophil", "bcell", "pdc",
+  #                       "monocyte_classical", "tcell_cd4", "tcell_cd8", "tcell_gd")
+  # df_kdes <- estimate_distributions(cell_type, df, fn, cols, valid_cell_types)
+  # write_csv(df_kdes, file=paste0(dir_out, "/kdes_for_qc/", fn, ".csv"), progress=FALSE)
+
 }
 
 
@@ -162,10 +186,13 @@ create_dirs <- function(dir_out) {
   dir.create(paste0(dir_out, "/files_labeled"), showWarnings = FALSE)
   dir.create(paste0(dir_out, "/feat_major"), showWarnings = FALSE)
   dir.create(paste0(dir_out, "/feat_adaptive"), showWarnings = FALSE)
+  dir.create(paste0(dir_out, "/kdes_for_qc"), showWarnings = FALSE)
+  dir.create(paste0(dir_out, "/cleanup_gates"), showWarnings = FALSE)
+  dir.create(paste0(dir_out, "/cleanup_stats"), showWarnings = FALSE)
 
   dir.create(paste0(dir_out, "/umap_major"), showWarnings = FALSE)
   dir.create(paste0(dir_out, "/umap_tcell"), showWarnings = FALSE)
-  dir.create(paste0(dir_out, "/umap_myel"), showWarnings = FALSE)
+  dir.create(paste0(dir_out, "/umap_mono"), showWarnings = FALSE)
   dir.create(paste0(dir_out, "/DNA_CD45"), showWarnings = FALSE)
 
   dir.create(paste0(dir_out, "/gating"), showWarnings = FALSE)

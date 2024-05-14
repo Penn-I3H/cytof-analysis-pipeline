@@ -10,7 +10,7 @@ files <- list.files(dir_in, pattern=".fcs")
 cols <- c("CD45", "CD123", "CD19", "CD11c", "CD16",
           "CD56", "CD294", "CD14", "CD3", "CD20",
           "CD66b", "CD38", "HLA-DR", "CD45RA",
-          "DNA1", "DNA2", "length")
+          "DNA1", "DNA2", "Event_length")
 
 ### create subdirectory structure for output
 create_dirs(dir_out)

@@ -4,7 +4,7 @@
 \alias{analyze_cytof_file}
 \title{Analyze a single CyTOF file}
 \usage{
-analyze_cytof_file(file, dir_in, dir_out, cols, defs, defs_tcell, defs_myeloid)
+analyze_cytof_file(file, dir_in, dir_out, cols)
 }
 \arguments{
 \item{file}{FCS file name.}
@@ -14,12 +14,6 @@ analyze_cytof_file(file, dir_in, dir_out, cols, defs, defs_tcell, defs_myeloid)
 \item{dir_out}{A path to write output.}
 
 \item{cols}{Columns to use in analysis.}
-
-\item{defs}{Model definitions for main cell types.}
-
-\item{defs_tcell}{Model definitions for T cell subtypes.}
-
-\item{defs_myeloid}{Model definitions for monocytes and DCs.}
 }
 \value{
 Nothing; all output written to file.
