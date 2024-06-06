@@ -19,7 +19,8 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
   fn <- file %>%
     str_remove("_Normalized.fcs") %>%
     str_remove("_normalized.fcs") %>%
-    str_remove("_Processed.fcs")
+    str_remove("_Processed.fcs") %>%
+    str_remove(".fcs")
   message(fn)
 
   df <- path %>%
@@ -157,15 +158,14 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
   ### gating secondary cell types
   gating_stuff(df, cell_type, dir_out, fn)
 
+  ### density estimates by cell type
+  ### to be used later for QC
+  valid_cell_types <- c("neutrophil", "eosinophil", "basophil", "bcell",
+                        "monocyte_classical", "tcell_cd4", "tcell_cd8", "tcell_gd")
+  df_kdes <- estimate_distributions(cell_type, df, fn, cols, valid_cell_types)
+  write_csv(df_kdes, file=paste0(dir_out, "/kdes_for_qc/", fn, ".csv"), progress=FALSE)
+
   return(NULL)
-
-  # ### density estimates by cell type
-  # ### to be used later for QC
-  # valid_cell_types <- c("neutrophil", "eosinophil", "basophil", "bcell", "pdc",
-  #                       "monocyte_classical", "tcell_cd4", "tcell_cd8", "tcell_gd")
-  # df_kdes <- estimate_distributions(cell_type, df, fn, cols, valid_cell_types)
-  # write_csv(df_kdes, file=paste0(dir_out, "/kdes_for_qc/", fn, ".csv"), progress=FALSE)
-
 }
 
 
