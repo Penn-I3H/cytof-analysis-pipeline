@@ -624,8 +624,13 @@ gate_and_plot <- function(df, cell_type, thresh, dir_out, fn, save_plots=TRUE) {
   df_neut <- df %>% filter(cell_type=="neutrophil")
   df_mono <- df %>% filter(grepl("monocyte", cell_type))
   df_mono_cl <- df %>% filter(cell_type=="monocyte_classical")
-  df_cd4 <- df %>% filter(cell_type=="tcell_cd4")
-  df_cd8 <- df %>% filter(cell_type=="tcell_cd8")
+  df_cd4 <- df %>%
+    filter(cell_type=="tcell_cd4") %>%
+    mutate(cell_id = seq(length(which(cell_type=="tcell_cd4")))) %>%
+    relocate(cell_id)
+  df_cd8 <- df %>% filter(cell_type=="tcell_cd8") %>%
+    mutate(cell_id = seq(length(which(cell_type=="tcell_cd8")))) %>%
+    relocate(cell_id)
   df_gd <- df %>% filter(cell_type=="tcell_gd")
   df_bcell <- df %>% filter(cell_type=="bcell")
   df_nkcell <- df %>% filter(cell_type=="nkcell")
@@ -674,6 +679,32 @@ gate_and_plot <- function(df, cell_type, thresh, dir_out, fn, save_plots=TRUE) {
 
   df_nkcell_late <- df_nkcell %>% filter(CD57 > thresh["CD57"])
 
+  df_cd4_all <- df_cd4 %>%
+    mutate(naive = cell_id %in% df_cd4_naive$cell_id,
+           emra = cell_id %in% df_cd4_emra$cell_id,
+           em1 = cell_id %in% df_cd4_em1$cell_id,
+           em2 = cell_id %in% df_cd4_em2$cell_id,
+           em3 = cell_id %in% df_cd4_em3$cell_id,
+           cm = cell_id %in% df_cd4_cm$cell_id,
+           treg = cell_id %in% df_cd4_treg$cell_id,
+           tfh = cell_id %in% df_cd4_cd185p$cell_id,
+           th1 = cell_id %in% df_cd4_th1$cell_id,
+           th17 = cell_id %in% df_cd4_th17$cell_id,
+           act = cell_id %in% df_cd4_act$cell_id,
+           cd57hi = CD57 > thresh["CD57"]) %>%
+    select(where(is.logical))
+
+  df_cd8_all <- df_cd8 %>%
+    mutate(naive = cell_id %in% df_cd8_naive$cell_id,
+           emra = cell_id %in% df_cd8_emra$cell_id,
+           em1 = cell_id %in% df_cd8_em1$cell_id,
+           em2 = cell_id %in% df_cd8_em2$cell_id,
+           em3 = cell_id %in% df_cd8_em3$cell_id,
+           cm = cell_id %in% df_cd8_cm$cell_id,
+           act = cell_id %in% df_cd8_act$cell_id,
+           cd57hi = CD57 > thresh["CD57"]) %>%
+    select(where(is.logical))
+
   df_feat <- tibble(file = fn,
                     `MAIT/NKT` = nrow(df_mait) / nrow(df_ab),
                     `CD4 Naive` = nrow(df_cd4_naive) / nrow(df_cd4),
@@ -698,7 +729,61 @@ gate_and_plot <- function(df, cell_type, thresh, dir_out, fn, save_plots=TRUE) {
                     `B cell Mem Sw` = nrow(df_bcell_mem_sw) / nrow(df_bcell),
                     `B cell Mem NotSw` = nrow(df_bcell_mem_nsw) / nrow(df_bcell),
                     `B cell Mem` = nrow(df_bcell_mem) / nrow(df_bcell),
-                    `NK cell late` = nrow(df_nkcell_late) / nrow(df_nkcell))
+                    `NK cell late` = nrow(df_nkcell_late) / nrow(df_nkcell),
+                    ########
+                    `CD4 CD57hi` = length(which(df_cd4_all$cd57hi)) / nrow(df_cd4),
+                    `CD4 CD57hi out of EMRA` = get_ratio(df_cd4_all, "emra", "cd57hi"),
+                    `CD4 CD57hi out of EM1` = get_ratio(df_cd4_all, "em1", "cd57hi"),
+                    `CD4 CD57hi out of EM3` = get_ratio(df_cd4_all, "em3", "cd57hi"),
+                    `CD4 CD57hi out of Th1` = get_ratio(df_cd4_all, "th1", "cd57hi"),
+                    `CD4 CD57hi out of Tfh` = get_ratio(df_cd4_all, "tfh", "cd57hi"),
+                    `CD4 CD57hi out of Treg` = get_ratio(df_cd4_all, "treg", "cd57hi"),
+                    `CD4 CD57hi out of Act` = get_ratio(df_cd4_all, "act", "cd57hi"),
+
+                    `CD4 Act out of EMRA` = get_ratio(df_cd4_all, "emra", "act"),
+                    `CD4 Act out of EM1` = get_ratio(df_cd4_all, "em1", "act"),
+                    `CD4 Act out of EM3` = get_ratio(df_cd4_all, "em3", "act"),
+                    `CD4 Act out of CM` = get_ratio(df_cd4_all, "cm", "act"),
+                    `CD4 Act out of Th1` = get_ratio(df_cd4_all, "th1", "act"),
+                    `CD4 Act out of Tfh` = get_ratio(df_cd4_all, "tfh", "act"),
+                    `CD4 Act out of Treg` = get_ratio(df_cd4_all, "treg", "act"),
+
+                    `CD4 EMRA out of CD57hi` = get_ratio(df_cd4_all, "cd57hi", "emra"),
+                    `CD4 EM1 out of CD57hi` = get_ratio(df_cd4_all, "cd57hi", "em1"),
+                    `CD4 EM3 out of CD57hi` = get_ratio(df_cd4_all, "cd57hi", "em3"),
+                    `CD4 Th1 out of CD57hi` = get_ratio(df_cd4_all, "cd57hi", "th1"),
+                    `CD4 Tfh out of CD57hi` = get_ratio(df_cd4_all, "cd57hi", "tfh"),
+                    `CD4 Treg out of CD57hi` = get_ratio(df_cd4_all, "cd57hi", "treg"),
+                    `CD4 Act out of CD57hi` = get_ratio(df_cd4_all, "cd57hi", "act"),
+
+                    `CD4 EMRA out of Act` = get_ratio(df_cd4_all, "act", "emra"),
+                    `CD4 EM1 out of Act` = get_ratio(df_cd4_all, "act", "em1"),
+                    `CD4 EM3 out of Act` = get_ratio(df_cd4_all, "act", "em3"),
+                    `CD4 CM out of Act` = get_ratio(df_cd4_all, "act", "cm"),
+                    `CD4 Th1 out of Act` = get_ratio(df_cd4_all, "act", "th1"),
+                    `CD4 Tfh out of Act` = get_ratio(df_cd4_all, "act", "tfh"),
+                    `CD4 Treg out of Act` = get_ratio(df_cd4_all, "act", "treg"),
+
+                    `CD8 CD57hi` = length(which(df_cd8_all$cd57hi)) / nrow(df_cd8),
+                    `CD8 CD57hi out of EMRA` = get_ratio(df_cd8_all, "emra", "cd57hi"),
+                    `CD8 CD57hi out of EM1` = get_ratio(df_cd8_all, "em1", "cd57hi"),
+                    `CD8 CD57hi out of EM3` = get_ratio(df_cd8_all, "em3", "cd57hi"),
+                    `CD8 CD57hi out of Act` = get_ratio(df_cd8_all, "act", "cd57hi"),
+
+                    `CD8 Act out of EMRA` = get_ratio(df_cd8_all, "emra", "act"),
+                    `CD8 Act out of EM1` = get_ratio(df_cd8_all, "em1", "act"),
+                    `CD8 Act out of EM3` = get_ratio(df_cd8_all, "em3", "act"),
+                    `CD8 Act out of CM` = get_ratio(df_cd8_all, "cm", "act"),
+
+                    `CD8 EMRA out of CD57hi` = get_ratio(df_cd8_all, "cd57hi", "emra"),
+                    `CD8 EM1 out of CD57hi` = get_ratio(df_cd8_all, "cd57hi", "em1"),
+                    `CD8 EM3 out of CD57hi` = get_ratio(df_cd8_all, "cd57hi", "em3"),
+                    `CD8 Act out of CD57hi` = get_ratio(df_cd8_all, "cd57hi", "act"),
+
+                    `CD8 EMRA out of Act` = get_ratio(df_cd8_all, "act", "emra"),
+                    `CD8 EM1 out of Act` = get_ratio(df_cd8_all, "act", "em1"),
+                    `CD8 EM3 out of Act` = get_ratio(df_cd8_all, "act", "em3"),
+                    `CD8 CM out of Act` = get_ratio(df_cd8_all, "act", "cm"))
 
   if (save_plots) {
 
@@ -762,13 +847,21 @@ gate_and_plot <- function(df, cell_type, thresh, dir_out, fn, save_plots=TRUE) {
     params <- c("CD57", "CD56")
     p1 <- gg_flow_thresh(df_nkcell, params, thresh) + ggtitle("NK cells")
     p2 <- gg_flow_thresh(df_neut, params, thresh) + ggtitle("Neutrophils")
-    p3 <- gg_flow_thresh(df_mono, params, thresh) + ggtitle("Monocytes")
-    p <- p1 + p2 + p3 + plot_layout(ncol=2)
+    p3 <- gg_flow_thresh(df_cd4, params, thresh) + ggtitle("CD4 T cells")
+    p4 <- gg_flow_thresh(df_cd8, params, thresh) + ggtitle("CD8 T cells")
+    p <- p1 + p2 + p3 + p4 + plot_layout(ncol=2)
     ggsave(p, filename=paste0(dir_out, "gating/nk_late_early/", fn, ".png"), width=12, height=10)
 
   }
 
   return(df_feat)
+}
+
+
+get_ratio <- function(df, col1, col2) {
+  num <- length(which(df[[col1]] & df[[col2]]))
+  denom <- length(which(df[[col1]]))
+  return(num/denom)
 }
 
 
