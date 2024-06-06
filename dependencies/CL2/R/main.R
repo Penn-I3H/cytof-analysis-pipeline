@@ -25,9 +25,8 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
   df <- path %>%
     read_data() %>%
     as_tibble() %>%
-    pregate_data(fn, dir_out)
+    pregate_data(fn, dir_out, plot=TRUE)
 
-  df <- df[sample(nrow(df), min(nrow(df),1e5)),]
   x_full <- df %>% as.matrix() %>% scale_data()
   x <- x_full[,cols]
   x <- df %>% select(all_of(cols)) %>% as.matrix() %>% scale_data()
@@ -53,7 +52,7 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
 
   ######### new doublet detection #########
 
-  cell_type <- detect_doublets_apr(df, cols, cell_type)#, thresh = 4)
+  cell_type <- detect_doublets(df, cols, cell_type)
   ##########################################
 
   mat <- as.matrix(df) %>% scale_data()
@@ -71,15 +70,10 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
     mutate(event = case_when(grepl("agg", ct) ~ "doublet",
                              grepl("debris", ct) ~ "debris",
                              TRUE ~ "single cell"))
-  # write_csv(df_clust, file=paste0(dir_out, "tmp/df_clust_", fn, ".csv"), progress=FALSE)
 
   p_major <- plot_umap_major(df_clust, fn)
   ggsave(p_major, filename = paste0(dir_out, "umap_major/", fn, ".png"),
          width=12, height=10)
-
-  # p_debris <- plot_umap_debris(df_clust, fn)
-  # ggsave(p_debris, filename = paste0(dir_out, "umap_debris/", fn, ".png"),
-  #        width=16, height=10)
 
   p_dna <- plot_dna_cd45(df_clust, fn)
   ggsave(p_dna, filename = paste0(dir_out, "DNA_CD45/", fn, ".png"),
@@ -113,7 +107,6 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
 
     df_um_mono <- df_um_mono %>%
       mutate(clust = clustering_mono[sel_mono])
-    # write_csv(df_um_mono, file=paste0(dir_out, "tmp/df_mono_", fn, ".csv"), progress=FALSE)
 
     p_mono <- plot_umap_mono(df_um_mono, fn)
     ggsave(p_mono, filename=paste0(dir_out, "umap_mono/", fn, ".png"),
@@ -149,7 +142,6 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
 
     df_um_tcell <- df_um_tcell %>%
       mutate(clust = clustering_tcell[sel_tcell])
-    # write_csv(df_um_tcell, file=paste0(dir_out, "tmp/df_tcell_", fn, ".csv"), progress=FALSE)
 
     p_tcell <- plot_umap_tcell(df_um_tcell, fn)
     ggsave(p_tcell, filename=paste0(dir_out, "umap_tcell/", fn, ".png"), width=12, height=10)

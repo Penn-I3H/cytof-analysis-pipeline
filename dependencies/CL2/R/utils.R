@@ -1,3 +1,4 @@
+
 read_data <- function(path) {
   ff <- read.FCS(path, truncate_max_range = FALSE)
   pdata <- ff@parameters@data
@@ -379,70 +380,6 @@ get_kdes <- function(df, cols, clustering) {
 }
 
 
-# separate_doublets_feb <- function(clustering, df, cols) {
-#   clustering_new <- as.character(clustering)
-#   tab <- table(clustering)
-#   candidates <- setdiff(names(which(tab>200)), grep("agg|debris", names(tab), value=TRUE))
-#
-#   to_check <- c("tcell", "neutrophil", "bcell")
-#   to_check <- to_check[which(!paste0("agg_", to_check) %in% levels(clustering))]
-#
-#   if (length(to_check)==0)
-#     return(clustering)
-#
-#   candidates <- candidates[grep(paste(to_check, collapse="|"), candidates)]
-#
-#   for (target in candidates) {
-#     cells <- which(clustering==target)
-#
-#     m10 <- median(df[["DNA1"]][cells])
-#     m20 <- median(df[["DNA2"]][cells])
-#     iqr10 <- IQR(df[["DNA1"]][cells])
-#     iqr20 <- IQR(df[["DNA2"]][cells])
-#
-#     dna <- 0.5*(df[["DNA1"]][cells] + df[["DNA2"]][cells])
-#     m <- median(dna)
-#     iqr <- IQR(dna)
-#     doub <- which((dna > m+2*iqr) & (sinh(dna) > 1.9*sinh(m)))
-#
-#     if (length(doub) > 50) {
-#       bh <- test_pure_doub(df, cells_sing=setdiff(cells, cells[doub]),
-#                            cells_doub=cells[doub], cols=cols)
-#       if (bh > 0.2)
-#         clustering_new[cells[doub]] <- paste0("agg_", target)
-#     }
-#   }
-#
-#   return(as.factor(clustering_new))
-# }
-#
-#
-# test_pure_doub <- function(df, cells_sing, cells_doub, cols) {
-#
-#   bhatt <- lapply(cols, function(ch) {
-#     m <- min(df[[ch]])
-#     M <- max(df[[ch]])
-#
-#     kde_sing <- bkde(df[[ch]][cells_sing], range.x = c(m,M), gridsize=101L)
-#     kde_doub <- bkde(df[[ch]][cells_doub], range.x = c(m,M), gridsize=101L)
-#
-#     intensity <- kde_sing$x
-#     dist_sing <- pmax( kde_sing$y / sum(kde_sing$y) , 0)
-#     dist_doub <- pmax( kde_doub$y / sum(kde_doub$y) , 0)
-#
-#     f1 <- approxfun(intensity, dist_sing, yleft=0, yright=0)
-#     scal <- if_else(ch=="length", "linear", "asinh")
-#     dist_ref <- conv_sum(f1,f1,intensity, scal=scal)
-#
-#     bh <- compute_bhatt(dist_ref, dist_doub)
-#
-#     return(bh)
-#   }) %>% Reduce(f=prod)
-#
-#   return(bhatt)
-# }
-
-
 compute_bhatt <- function(x,y) {
   return(sum(sqrt(x * y)))
 }
@@ -500,7 +437,7 @@ detect_doublets_apr <- function(df, cols, cell_type, thresh=5) {
   x0 <- as.matrix(df)[,setdiff(cols, "Event_length")]
 
   set.seed(0)
-  n_doub <- floor(nrow(x0)/10)
+  n_doub <- floor(nrow(x0)/2)
   sel_for_aug <- which(cell_type != "debris")
   sel1 <- sample(sel_for_aug, n_doub)
   sel2 <- sample(sel_for_aug, n_doub)
@@ -529,89 +466,6 @@ detect_doublets_apr <- function(df, cols, cell_type, thresh=5) {
                                    cell_type[sel_for_aug])
   return(ct_final)
 }
-
-
-# get_labels_with_doublets_mar <- function(clustering, df, gr, defs, centroids_sc) {
-#
-#   labels <- levels(clustering)
-#
-#   el <- as_edgelist(gr)
-#   df_el <- tibble(source = as.integer(el[,1]),
-#                   target = as.integer(el[,2]),
-#                   weight = E(gr)$weight)
-#
-#   is_doub <- labels %in% labels[unique(df_el$target)]
-#
-#   lab_not_doub <- labels[which(!is_doub)]
-#   ev_not_doub <- which(clustering %in% lab_not_doub)
-#
-#   mat <- data.matrix(df[ev_not_doub,]) %>% scale()
-#
-#   tmp <- as.factor(as.character(clustering[ev_not_doub]))
-#   centroids <- get_medians(mat, tmp)
-#   labels <- rep("agg", length(labels))
-#   # labels[which(!is_doub)] <- label_clusters_score_opt(centroids[lab_not_doub,], defs, mdipa_main = FALSE)
-#   labels[which(!is_doub)] <- label_clusters_score_opt(centroids_sc[which(!is_doub),], defs, mdipa_main = FALSE)
-#
-#
-#   df_el <- df_el %>%
-#     mutate(source_name = labels[source]) %>%
-#     arrange(target, -weight)
-#
-#   ts <- as.integer(V(gr)$name[as.integer(topological.sort(gr))])
-#   for (i in ts) {
-#     if (labels[i]=="agg") {
-#       components <- df_el %>%
-#         filter(target==i & !(grepl("debris|agg", source_name))) %>%
-#         pull(source_name) %>%
-#         unique() %>%
-#         sort()
-#
-#       labels[i] <- paste(c("agg", components), collapse="_")
-#       if (labels[i] == "agg")
-#         labels[i] <- "debris"
-#     }
-#   }
-#
-#   return(make.unique(labels))
-# }
-
-
-
-# plot_graph_suga <- function(gr) {
-#   layout <- create_layout(gr, layout = "sugiyama")
-#   ggraph(layout) +
-#     geom_edge_fan(aes(alpha = weight),
-#                   arrow = arrow(length = unit(4, 'mm')),
-#                   end_cap = circle(3, 'mm')) +
-#     geom_node_label(aes(label=name), size=1) +
-#     theme_graph(base_family = "sans") +
-#     theme(text = element_text(size = 18))
-# }
-
-
-# detect_doublets <- function(df, cols, clustering) {
-#
-#   df_kdes <- get_kdes(df, cols, clustering) %>%
-#     pivot_wider(names_from="cluster", values_from="density")
-#
-#   tab <- table(clustering)
-#   med_len_dna <- get_medians(df[,c("length","DNA1")], clustering)
-#
-#   system.time(bhatt_summ <- lapply(names(tab), get_bhatt_target_fast,
-#                                    df_kdes=df_kdes, tab=tab,
-#                                    med_len_dna=med_len_dna, cols=cols) %>%
-#                 do.call(what=rbind))
-#
-#   bhatt_graph <- bhatt_summ %>%
-#     filter(bhatt > 0.2) %>%
-#     pivot_longer(all_of(c("cl1","cl2")))
-#
-#   gr <- graph_from_edgelist(bhatt_graph %>% select(value, target) %>% as.matrix())
-#   E(gr)$weight <- bhatt_graph$bhatt
-#
-#   return(gr)
-# }
 
 
 get_bhatt_target_fast <- function(df_kdes, tab, med_len_dna, cols, target) {
