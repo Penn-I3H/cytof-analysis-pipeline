@@ -432,7 +432,7 @@ merge_clusters_c <- function(df, cols, clustering, min_bhatt=0.1) {
   return(cl_merged)
 }
 
-detect_doublets_apr <- function(df, cols, cell_type, thresh=5) {
+detect_doublets <- function(df, cols, cell_type, thresh=5) {
 
   x0 <- as.matrix(df)[,setdiff(cols, "Event_length")]
 
