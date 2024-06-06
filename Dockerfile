@@ -23,7 +23,7 @@ RUN Rscript -e "install.packages('Matrix', type = 'source')"
 RUN Rscript -e "install.packages('irlba', type = 'source')"
 
 # various dependencies
-RUN Rscript -e "install.packages(c('KernSmooth', 'patchwork', 'uwot', 'ash', 'RColorBrewer', 'reshape2', 'sp'), Ncpus = 10, dependencies=TRUE)"
+RUN Rscript -e "install.packages(c('KernSmooth', 'patchwork', 'uwot', 'ash', 'RColorBrewer', 'reshape2', 'sp', 'parallel'), Ncpus = 10, dependencies=TRUE)"
 RUN Rscript -e "install.packages(c('Rcpp', 'RcppArmadillo', 'RcppHNSW'), Ncpus = 10, dependencies=TRUE)"
 
 # igraph
@@ -46,4 +46,4 @@ RUN ls /service
 
 RUN mkdir -p data
 
-ENTRYPOINT [ "Rscript", "/service/main.R" ]
+ENTRYPOINT [ "Rscript", "/service/main_parallel.R" ]
