@@ -4,7 +4,7 @@ library(parallel)
 
 dir_in <- Sys.getenv("INPUT_DIR")
 dir_out <- Sys.getenv("OUTPUT_DIR")
-max_cores <- Sys.getenv("MAX_CORES")
+# max_cores <- Sys.getenv("MAX_CORES")
 
 files <- list.files(dir_in, pattern=".fcs")
 
@@ -19,7 +19,10 @@ create_dirs(dir_out)
 
 ### run analysis in parallel
 nc <- detectCores()
-nc <- min(nc, max_cores)
+
+message(paste0("Detected ", nc, " cores."))
+
+# nc <- min(nc, max_cores)
 cl <- makeCluster(nc)
 
 clusterExport(cl, c("dir_in", "dir_out", "cols"))
