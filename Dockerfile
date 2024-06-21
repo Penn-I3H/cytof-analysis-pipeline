@@ -30,10 +30,8 @@ RUN Rscript -e "install.packages(c('Rcpp', 'RcppArmadillo', 'RcppHNSW'), Ncpus =
 RUN Rscript -e "install.packages(c('igraph'), Ncpus = 10, dependencies=TRUE)"
 
 # flowCore and its prerequisites
-RUN Rscript -e "install.packages(c('BiocManager'), Ncpus=10)"
+RUN Rscript -e "install.packages(c('BiocManager', 'remotes'), Ncpus=10)"
 RUN Rscript -e "BiocManager::install('RProtoBufLib')"
-RUN Rscript -e "install.packages('remotes'), Ncpus = 10, dependencies=TRUE)"
-
 RUN Rscript -e "remotes::install_github('RGLab/cytolib')"
 # RUN Rscript -e "BiocManager::install('cytolib', version='3.18')"
 RUN Rscript -e "library(cytolib)" # sanity check
