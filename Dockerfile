@@ -1,4 +1,4 @@
-FROM rocker/r-ver:4.4.0
+FROM rocker/r-ver:4.3.2
 
 WORKDIR /service
 
@@ -32,9 +32,7 @@ RUN Rscript -e "install.packages(c('igraph'), Ncpus = 10, dependencies=TRUE)"
 # flowCore and its prerequisites
 RUN Rscript -e "install.packages(c('BiocManager'), Ncpus=10)"
 RUN Rscript -e "BiocManager::install('RProtoBufLib')"
-# RUN Rscript -e "remotes::install_github('RGLab/cytolib')"
-RUN Rscript -e "BiocManager::install(version = '3.19')"
-RUN Rscript -e "BiocManager::install('cytolib', verbose=TRUE)"
+RUN Rscript -e "BiocManager::install('cytolib', version='3.18')"
 RUN Rscript -e "library(cytolib)" # sanity check
 RUN Rscript -e "BiocManager::install('flowCore')"
 
