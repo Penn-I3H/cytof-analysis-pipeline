@@ -35,10 +35,25 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// doub_lab_c
+IntegerVector doub_lab_c(IntegerMatrix knn_orig, IntegerVector sim_lab, int n_doub, int n_lev);
+RcppExport SEXP _CL2_doub_lab_c(SEXP knn_origSEXP, SEXP sim_labSEXP, SEXP n_doubSEXP, SEXP n_levSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< IntegerMatrix >::type knn_orig(knn_origSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type sim_lab(sim_labSEXP);
+    Rcpp::traits::input_parameter< int >::type n_doub(n_doubSEXP);
+    Rcpp::traits::input_parameter< int >::type n_lev(n_levSEXP);
+    rcpp_result_gen = Rcpp::wrap(doub_lab_c(knn_orig, sim_lab, n_doub, n_lev));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_CL2_get_edgelist", (DL_FUNC) &_CL2_get_edgelist, 1},
     {"_CL2_bhatt", (DL_FUNC) &_CL2_bhatt, 3},
+    {"_CL2_doub_lab_c", (DL_FUNC) &_CL2_doub_lab_c, 4},
     {NULL, NULL, 0}
 };
 
