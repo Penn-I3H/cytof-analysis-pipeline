@@ -5,7 +5,6 @@ library(parallel)
 dir_in <- Sys.getenv("INPUT_DIR")
 dir_out <- Sys.getenv("OUTPUT_DIR")
 use_parallel <- Sys.getenv("USE_PARALLEL")
-logfile <- Sys.getenv("LOG_FILE")
 
 files <- list.files(dir_in, pattern=".fcs")
 
@@ -24,7 +23,8 @@ if (use_parallel == 1) {
 
   message(paste0("Detected ", nc, " cores."))
 
-  cl <- makeCluster(nc, outfile=logfile)
+  log_file <- paste0(dir_out, "/log.txt")
+  cl <- makeCluster(nc, outfile=log_file)
 
   clusterExport(cl, c("dir_in", "dir_out", "cols"))
   clusterEvalQ(cl, {
