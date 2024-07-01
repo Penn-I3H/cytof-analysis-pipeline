@@ -20,11 +20,13 @@ create_dirs(dir_out)
 if (use_parallel == 1) {
   ### run analysis in parallel
   nc <- detectCores()
+  nc_in_use <- 2
 
   message(paste0("Detected ", nc, " cores."))
+  message(paste0("Cores in use ", nc_in_use, " cores."))
 
   log_file <- paste0(dir_out, "/log.txt")
-  cl <- makeCluster(nc, outfile=log_file)
+  cl <- makeCluster(nc_in_use, outfile=log_file)
 
   clusterExport(cl, c("dir_in", "dir_out", "cols"))
   clusterEvalQ(cl, {
