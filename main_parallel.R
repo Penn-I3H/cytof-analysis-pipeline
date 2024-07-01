@@ -4,7 +4,7 @@ library(parallel)
 
 dir_in <- Sys.getenv("INPUT_DIR")
 dir_out <- Sys.getenv("OUTPUT_DIR")
-# max_cores <- Sys.getenv("MAX_CORES")
+use_parallel <- Sys.getenv("USE_PARALLEL")
 
 files <- list.files(dir_in, pattern=".fcs")
 
@@ -17,24 +17,31 @@ cols <- c("CD45", "CD123", "CD19", "CD11c", "CD16",
 ### create subdirectory structure for output
 create_dirs(dir_out)
 
-### run analysis in parallel
-nc <- detectCores()
+if (use_parallel == 1) {
+  ### run analysis in parallel
+  nc <- detectCores()
 
-message(paste0("Detected ", nc, " cores."))
+  message(paste0("Detected ", nc, " cores."))
 
-# nc <- min(nc, max_cores)
-cl <- makeCluster(nc)
+  cl <- makeCluster(nc)
 
-clusterExport(cl, c("dir_in", "dir_out", "cols"))
-clusterEvalQ(cl, {
-  library(CL2)
-})
+  clusterExport(cl, c("dir_in", "dir_out", "cols"))
+  clusterEvalQ(cl, {
+    library(CL2)
+  })
 
-parLapply(cl=cl, files, analyze_cytof_file,
-          dir_in=dir_in, dir_out=dir_out,
-          cols=cols)
+  parLapply(cl=cl, files, analyze_cytof_file,
+            dir_in=dir_in, dir_out=dir_out,
+            cols=cols)
 
-stopCluster(cl)
+  stopCluster(cl)
+} else {
+  ### run serial analysis
+  lapply(files, analyze_cytof_file,
+         dir_in=dir_in, dir_out=dir_out,
+         cols=cols)
+}
+
 
 
 
