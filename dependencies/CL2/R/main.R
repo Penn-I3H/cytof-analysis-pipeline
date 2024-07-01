@@ -21,7 +21,7 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
     str_remove("_normalized.fcs") %>%
     str_remove("_Processed.fcs") %>%
     str_remove(".fcs")
-  message(fn)
+  print(paste("Starting processing for file", fn, "..."))
 
   df <- path %>%
     read_data() %>%
@@ -37,6 +37,7 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
   df_um <- get_umap(df, x, sel_umap)
 
   ### clustering and annotating clusters
+  print(paste("Clustering file", fn, "..."))
   clustering_raw <- run_fastpg(x, resolution = 1, n_threads = 1)
   clustering <- merge_clusters_c(df, cols, clustering_raw, min_bhatt = 0.2)
 
@@ -53,6 +54,7 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
 
   ######### new doublet detection #########
 
+  print(paste("Doublet detection for file", fn, "..."))
   cell_type <- detect_doublets(df, cols, cell_type)
   ##########################################
 
@@ -155,6 +157,7 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
   df_file <- tibble(cell_type=cell_type)
   write_csv(df_file, file=paste0(dir_out, "files_labeled/", fn, ".csv"), progress=FALSE)
 
+  print(paste("Gating file", fn, "..."))
   ### gating secondary cell types
   gating_stuff(df, cell_type, dir_out, fn)
 
@@ -165,6 +168,7 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
   df_kdes <- estimate_distributions(cell_type, df, fn, cols, valid_cell_types)
   write_csv(df_kdes, file=paste0(dir_out, "/kdes_for_qc/", fn, ".csv"), progress=FALSE)
 
+  print(paste("Finished file", fn, "!"))
   return(NULL)
 }
 
