@@ -89,6 +89,7 @@ func Process(filename string) error {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		fmt.Println(stderr.String())
 		return err
 	}
 
