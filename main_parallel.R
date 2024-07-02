@@ -2,11 +2,10 @@
 library(CL2)
 library(parallel)
 
+args <- commandArgs(trailingOnly = TRUE)
+
 dir_in <- Sys.getenv("INPUT_DIR")
 dir_out <- Sys.getenv("OUTPUT_DIR")
-use_parallel <- Sys.getenv("USE_PARALLEL")
-
-files <- list.files(dir_in, pattern=".fcs")
 
 ### list channels to be used during analysis
 cols <- c("CD45", "CD123", "CD19", "CD11c", "CD16",
@@ -17,33 +16,9 @@ cols <- c("CD45", "CD123", "CD19", "CD11c", "CD16",
 ### create subdirectory structure for output
 create_dirs(dir_out)
 
-if (use_parallel == 1) {
-  ### run analysis in parallel
-  nc <- detectCores()
-  nc_in_use <- 2
-
-  message(paste0("Detected ", nc, " cores."))
-  message(paste0("Cores in use ", nc_in_use, " cores."))
-
-  log_file <- paste0(dir_out, "/log.txt")
-  cl <- makeCluster(nc_in_use, outfile=log_file)
-
-  clusterExport(cl, c("dir_in", "dir_out", "cols"))
-  clusterEvalQ(cl, {
-    library(CL2)
-  })
-
-  parLapply(cl=cl, files, analyze_cytof_file,
-            dir_in=dir_in, dir_out=dir_out,
-            cols=cols)
-
-  stopCluster(cl)
-} else {
-  ### run serial analysis
-  lapply(files, analyze_cytof_file,
-         dir_in=dir_in, dir_out=dir_out,
-         cols=cols)
-}
+file_to_process <- args[1]
+print(file_to_process)
+analyze_cytof_file(file_to_process, dir_in=dir_in, dir_out=dir_out, cols=cols)
 
 
 

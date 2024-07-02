@@ -4,6 +4,16 @@ WORKDIR /service
 
 RUN apt clean && apt-get update && apt-get -y install alien
 
+# install dependencies
+RUN apt-get -y install wget
+
+# install Go
+RUN wget https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
+RUN  rm -rf /usr/local/go && tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
+ENV PATH="${PATH}:/usr/local/go/bin"
+# cleanup
+RUN rm -f go1.21.0.linux-amd64.tar.gz
+
 # R program dependencies
 RUN apt-get install -y libudunits2-dev && apt-get install -y libgeos-dev && apt-get install -y libproj-dev && apt-get -y install libnlopt-dev && apt-get -y install pkg-config && apt-get -y install gdal-bin && apt-get install -y libgdal-dev
 RUN apt-get -y install libcurl4-openssl-dev libfontconfig1-dev libxml2-dev libharfbuzz-dev libfribidi-dev libfreetype6-dev libpng-dev libtiff5-dev libjpeg-dev
@@ -47,4 +57,8 @@ RUN ls /service
 
 RUN mkdir -p data
 
-ENTRYPOINT [ "Rscript", "/service/main_parallel.R" ]
+RUN go build -o /service/main main.go
+
+# ENTRYPOINT [ "Rscript", "/service/main_parallel.R" ]
+
+ENTRYPOINT [ "/service/main" ]
