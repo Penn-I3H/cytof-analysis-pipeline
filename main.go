@@ -55,7 +55,7 @@ func main() {
 
 	// create work
 	for _, j := range files {
-		analyses <- &Analysis{fmt.Sprintf("%s/%s", inputDir, j.Name())}
+		analyses <- &Analysis{j.Name()}
 	}
 	close(analyses)
 
