@@ -45,7 +45,7 @@ func main() {
 	results := make(chan string, numberOfAnalyses)
 
 	log.Println("Starting pipeline")
-
+	runtime.GOMAXPROCS(totalCPU)
 	fmt.Println("CPU(s) in use ", totalCPU)
 
 	NumConcurrentWorkers := totalCPU
@@ -63,6 +63,8 @@ func main() {
 	for j := 1; j <= numberOfAnalyses; j++ {
 		log.Println(<-results)
 	}
+
+	runtime.GOMAXPROCS(defaultCPU)
 
 	log.Println("Analysis complete")
 }
