@@ -437,8 +437,9 @@ detect_doublets <- function(df, cols, cell_type, thresh=5) {
   x0 <- as.matrix(df)[,setdiff(cols, "Event_length")]
 
   set.seed(0)
-  n_doub <- floor(nrow(x0)/2)
   sel_for_aug <- which(cell_type != "debris")
+  n_doub <- floor(length(sel_for_aug)/2)
+
   sel1 <- sample(sel_for_aug, n_doub)
   sel2 <- sample(sel_for_aug, n_doub)
   x_doub <- asinh(sinh(x0[sel1,]) + sinh(x0[sel2,]))
@@ -448,7 +449,6 @@ detect_doublets <- function(df, cols, cell_type, thresh=5) {
   all_knn <- hnsw_knn(x_aug, k=15, distance= 'l2',
                       n_threads=1, M=48)
   n_nb_doub <- apply(all_knn$idx, 1, function(row) length(which(row<n_doub)))
-
 
   sim_lab <- if_else(cell_type[sel1] < cell_type[sel2],
                      paste0("agg_", cell_type[sel1], "_", cell_type[sel2]),
