@@ -1,6 +1,5 @@
 
-read_data <- function(path) {
-  ff <- read.FCS(path, truncate_max_range = FALSE)
+read_data <- function(ff) {
   pdata <- ff@parameters@data
 
   # remove unused channels
@@ -30,10 +29,13 @@ plot_cleanup_gate <- function(df, cutoffs, marker) {
     guides(fill="none")
 }
 
-apply_cleanup_gate <- function(df, cutoffs, marker) {
-  df %>%
-    filter(.data[[marker]] >= cutoffs[[marker]][1] &
-             .data[[marker]] <= cutoffs[[marker]][2])
+apply_cleanup_gate <- function(df, event_type, cutoffs, marker, label) {
+  filt <- which(event_type=="")
+  dat <- df[[marker]][filt]
+
+  idx_out <- which(dat < cutoffs[[marker]][1] | dat > cutoffs[[marker]][2])
+  event_type[filt[idx_out]] <- label
+  return(event_type)
 }
 
 
@@ -46,13 +48,20 @@ pregate_data <- function(df, fn, dir_out, plot=FALSE) {
                   "Width" = c(asinh(30/5), asinh(300/5)),
                   "Live" = c(0, asinh(80/5)))
   markers <- names(cutoffs)
+  labels <- c("Bead", "Residual", "Center", "Offset", "Width", "Dead")
 
-  df1 <- apply_cleanup_gate(df, cutoffs, markers[1])
-  df2 <- apply_cleanup_gate(df1, cutoffs, markers[2])
-  df3 <- apply_cleanup_gate(df2, cutoffs, markers[3])
-  df4 <- apply_cleanup_gate(df3, cutoffs, markers[4])
-  df5 <- apply_cleanup_gate(df4, cutoffs, markers[5])
-  df6 <- apply_cleanup_gate(df5, cutoffs, markers[6])
+  event_type <- character(nrow(df))
+
+  for (i in seq_along(labels)) {
+    event_type <- apply_cleanup_gate(df, event_type, cutoffs, markers[i], labels[i])
+  }
+
+  df1 <- df[which(!event_type %in% labels[seq(1)]),]
+  df2 <- df[which(!event_type %in% labels[seq(2)]),]
+  df3 <- df[which(!event_type %in% labels[seq(3)]),]
+  df4 <- df[which(!event_type %in% labels[seq(4)]),]
+  df5 <- df[which(!event_type %in% labels[seq(5)]),]
+  df6 <- df[which(!event_type %in% labels[seq(6)]),]
 
   if(plot) {
     p1 <- plot_cleanup_gate(df, cutoffs, markers[1])
@@ -66,7 +75,6 @@ pregate_data <- function(df, fn, dir_out, plot=FALSE) {
            width=9, height=6)
   }
 
-
   df_stats <- tibble(file = fn,
                      n_events = nrow(df),
                      n_bead_gate = nrow(df1),
@@ -78,12 +86,7 @@ pregate_data <- function(df, fn, dir_out, plot=FALSE) {
   write_csv(df_stats, file = paste0(dir_out, "cleanup_stats/cleanup_stats_", fn, ".csv"),
             progress=FALSE)
 
-  markers_keep <- names(df)[!grepl("Time|Bead|Live|Center|Offset|Residual|Width", names(df))]
-
-  df_clean <- df6 %>%
-    select(all_of(markers_keep))
-
-  return(df_clean)
+  return(event_type)
 }
 
 
@@ -152,11 +155,16 @@ gg_flow <- function(df, params, nbin=100, xlim=NULL, ylim=NULL, method="bin") {
 }
 
 
-gg_flow_thresh <- function(df, params, thresh, nbin=100, method="bin",
+gg_flow_thresh <- function(df, params, thresh, thresh_neut, thresh_mono,
+                           nbin=100, method="bin",
                            xlim=c(-0.1,7), ylim=c(-0.1,7)) {
   gg_flow(df, params, nbin=nbin, method=method, xlim=xlim, ylim=ylim) +
     geom_hline(yintercept=thresh[params[2]], color="red") +
-    geom_vline(xintercept=thresh[params[1]], color="red")
+    geom_vline(xintercept=thresh[params[1]], color="red")+
+    geom_hline(yintercept=thresh_neut[params[2]], color="blue", linetype="dashed") +
+    geom_vline(xintercept=thresh_neut[params[1]], color="blue", linetype="dashed")+
+    geom_hline(yintercept=thresh_mono[params[2]], color="green", linetype="dashed") +
+    geom_vline(xintercept=thresh_mono[params[1]], color="green", linetype="dashed")
 }
 
 gg_flow_gate <- function(df, params, gate, nbin=100, method="bin",
@@ -213,19 +221,22 @@ plot_umap_major <- function(df, fn) {
                          "basophil", "pdc",
                          "tcell", "nkcell",
                          "bcell_lymphoma", "myeloid",
-                         "debris", "agg")
+                         "debris", "doublet")
 
   p1 <- plot_umap_clust(df, "ct", fn, pal_paired)
   p2 <- plot_umap_channel(df, "CD3")
   p3 <- plot_umap_channel(df, "CD19")
-  p4 <- plot_umap_channel(df, "CD66b")
-  p5 <- plot_umap_channel(df, "CD123")
-  p6 <- plot_umap_channel(df, "CD294")
-  p7 <- plot_umap_channel(df, "CD56")
-  p8 <- plot_umap_channel(df, "CD11c")
-  p9 <- plot_umap_channel(df, "DNA1")
+  p4 <- plot_umap_channel(df, "CD20")
+  p5 <- plot_umap_channel(df, "CD66b")
+  p6 <- plot_umap_channel(df, "CD16")
+  p7 <- plot_umap_channel(df, "CD123")
+  p8 <- plot_umap_channel(df, "CD294")
+  p9 <- plot_umap_channel(df, "CD56")
+  p10 <- plot_umap_channel(df, "CD11c")
+  p11 <- plot_umap_channel(df, "DNA1")
+  p12 <- plot_umap_channel(df, "CD45")
 
-  p <- wrap_plots(p1, p2, p3, p4, p5, p6, p7, p8, p9, ncol=3)
+  p <- wrap_plots(p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, ncol=4)
   return(p)
 }
 
@@ -315,6 +326,17 @@ label_clusters_score_opt <- function(centroids, defs, mdipa_main=TRUE, return_yp
 
   lab <- colnames(ypred)[unname(apply(ypred, 1, which.max))]
   return(lab)
+}
+
+
+get_label_confidence <- function(centroids, defs) {
+  ypred <- label_clusters_score_opt(centroids, defs, return_ypred = TRUE)
+
+  conf <- apply(ypred, 1, function(row) {
+    row_s <- sort(row, decreasing=TRUE)
+    return(row_s[1]-row_s[2])
+  })
+  return(conf)
 }
 
 
@@ -451,8 +473,8 @@ detect_doublets <- function(df, cols, cell_type, thresh=5) {
   n_nb_doub <- apply(all_knn$idx, 1, function(row) length(which(row<n_doub)))
 
   sim_lab <- if_else(cell_type[sel1] < cell_type[sel2],
-                     paste0("agg_", cell_type[sel1], "_", cell_type[sel2]),
-                     paste0("agg_", cell_type[sel2], "_", cell_type[sel1]))
+                     paste0("doublet_", cell_type[sel1], "_", cell_type[sel2]),
+                     paste0("doublet_", cell_type[sel2], "_", cell_type[sel1]))
   sim_lab_fac <- as.factor(sim_lab)
 
   knn_orig <- all_knn$idx[-seq(n_doub),]
@@ -526,22 +548,8 @@ one_thresh_gaussian <- function(x, sym_zero=TRUE) {
   return(med+2.5*s)
 }
 
-get_thresh_gauss <- function(df_neut, df_myel, df_cd4, df_bcell) {
-  thresh <- sapply(names(df_neut), function(col) one_thresh_gaussian(df_neut[[col]]))
-  thresh_myel <- sapply(names(df_myel), function(col) one_thresh_gaussian(df_myel[[col]]))
-  thresh_cd4 <- -sapply(names(df_cd4), function(col) one_thresh_gaussian(-df_cd4[[col]], sym_zero = FALSE))
-  thresh_bcell <- -sapply(names(df_bcell), function(col) one_thresh_gaussian(-df_bcell[[col]], sym_zero = FALSE))
-
-  mark_m <- c("IgD", "TCRgd", "CD183")
-  thresh[mark_m] <- thresh_myel[mark_m]
-
-  mark_cd4 <- c("CD4")
-  thresh[mark_cd4] <- thresh_cd4[mark_cd4]
-
-  mark_bcell <- c("HLA-DR")
-  thresh[mark_bcell] <- thresh_bcell[mark_bcell]
-
-  thresh["CD196"] <- 2
+get_thresh_gauss <- function(df) {
+  thresh <- sapply(names(df), function(col) one_thresh_gaussian(df[[col]]))
   return(thresh)
 }
 
@@ -569,61 +577,112 @@ update_clustering <- function(cl, cl_new, to_replace) {
 
 
 gating_stuff <- function(df, cell_type, dir_out, fn) {
-  df_neut <- df %>% filter(cell_type=="neutrophil")
-  df_mono <- df %>% filter(grepl("monocyte", cell_type))
-  df_mono_cl <- df %>% filter(cell_type=="monocyte_classical")
-  df_cd4 <- df %>% filter(cell_type=="tcell_cd4")
-  df_cd8 <- df %>% filter(cell_type=="tcell_cd8")
-  df_gd <- df %>% filter(cell_type=="tcell_gd")
-  df_bcell <- df %>% filter(cell_type=="bcell")
-  df_nkcell <- df %>% filter(cell_type=="nkcell")
-
   df_kdes <- get_kdes(df, names(df), as.factor(cell_type))
 
-  thresh <- get_thresh_gauss(df_neut, df_mono_cl, df_cd4, df_bcell)
+  thresh_neut <- get_thresh_gauss(df %>% filter(cell_type=="neutrophil"))
+  thresh_mono <- get_thresh_gauss(df %>% filter(cell_type=="myeloid"))
+  thresh <- get_thresholds_density(df, cell_type)
 
-  ch_care <- c("CD4", "CD161", "CD45RA", "CD27", "CD197",
-               "CD25", "CD127", "CD185", "CD183", "CD196",
-               "CD38", "HLA-DR", "IgD", "CD57")
-  p <- plot_kdes(df_kdes %>% filter(channel %in% ch_care),
-                 c("neutrophil", "tcell_cd4", "tcell_cd8", "bcell", "monocyte_classical", "nkcell")) +
-    geom_vline(data=tibble(channel=names(thresh), intensity=unname(thresh)) %>% filter(channel %in% ch_care),
+  ct_plot <- c("neutrophil", "tcell_cd4", "tcell_cd8", "bcell", "myeloid", "nkcell")
+  ch_plot <- c("CD45RA", "CD27", "CD197", "CD14", "CD4",
+               "CD25", "CD185", "CD183", "CD196", "CD56",
+               "CD38", "HLA-DR", "IgD", "CD57", "CD161")
+  ch_neut <- setdiff(ch_care, c("CD196"))
+  ch_mono <- setdiff(ch_care, c("CD14", "CD196", "CD38", "CD45RA", "HLA-DR"))
+  thresh[ch_neut] <- pmax(thresh[ch_neut], thresh_neut[ch_neut])
+  thresh[ch_mono] <- pmax(thresh[ch_mono], thresh_mono[ch_mono])
+
+  p <- plot_kdes(df_kdes %>% filter(channel %in% ch_plot), ct_plot) +
+    geom_vline(data=tibble(channel=names(thresh), intensity=unname(thresh)) %>% filter(channel %in% ch_plot),
                mapping=aes(xintercept=intensity), linetype="dashed")
   ggsave(p, filename=paste0(dir_out, "gating/kdes_thresh/", fn, ".png"), width=12, height=10)
 
-  n_tot <- length(which(!grepl("debris|agg", cell_type)))
-  n_tcell <- length(which(grepl("tcell", cell_type) & !grepl("agg", cell_type)))
+  n_tot <- length(which(!grepl("debris|doublet", cell_type)))
+  n_tcell <- length(which(grepl("tcell", cell_type) & !grepl("doublet", cell_type)))
   df_feat_maj <- tibble(file = fn,
                         `T cell` = n_tcell / n_tot,
-                        `T cell CD4` = nrow(df_cd4) / n_tcell,
-                        `T cell CD8` = nrow(df_cd8) / n_tcell,
-                        `T cell gd` = nrow(df_gd) / n_tcell,
-                        `B cell` = nrow(df_bcell) / n_tot,
-                        `NK cell` = nrow(df_nkcell) / n_tot,
-                        `Monocyte` = nrow(df_mono) / n_tot,
-                        `Monocyte Classical` = length(which(cell_type=="monocyte_classical")) / nrow(df_mono),
-                        `Monocyte Nonclassical` = length(which(cell_type=="monocyte_nonclassical")) / nrow(df_mono),
-                        `mdc` = length(which(cell_type=="mdc")) / n_tot,
-                        `pdc` = length(which(cell_type=="pdc")) / n_tot,
+                        `T cell CD4` = length(which(cell_type=="tcell_cd4")) / n_tcell,
+                        `T cell CD8` = length(which(cell_type=="tcell_cd8")) / n_tcell,
+                        `T cell gd` = length(which(cell_type=="tcell_gd")) / n_tcell,
+                        `B cell` = length(which(cell_type=="bcell")) / n_tot,
+                        `NK cell` = length(which(cell_type=="nkcell")) / n_tot,
+                        `Myeloid` = length(which(cell_type=="myeloid")) / n_tot,
+                        `pDC` = length(which(cell_type=="pdc")) / n_tot,
                         `Plasmablast` = length(which(cell_type=="plasmablast")) / n_tot,
-                        `Neutrophil` = nrow(df_neut) / n_tot,
+                        `Neutrophil` = length(which(cell_type=="neutrophil")) / n_tot,
                         `Eosinophil` = length(which(cell_type=="eosinophil")) / n_tot,
                         `Basophil` = length(which(cell_type=="basophil")) / n_tot)
   write_csv(df_feat_maj, file=paste0(dir_out, "/feat_major/feat_major_", fn, ".csv"))
 
-  df_feat_adaptive <- gate_and_plot(df, cell_type, thresh, dir_out, fn, save_plots=TRUE)
+  df_feat_adaptive <- gate_and_plot(df, cell_type, thresh, thresh_neut, thresh_mono,
+                                    dir_out, fn, save_plots=TRUE)
   write_csv(df_feat_adaptive, file=paste0(dir_out, "/feat_adaptive/feat_adaptive_", fn, ".csv"))
 
 }
 
 
-gate_and_plot <- function(df, cell_type, thresh, dir_out, fn, save_plots=TRUE) {
+apply_gate_hierarchy <- function(df, cell_type, ct_in="tcell_cd4", ct="T cell CD4") {
+
+  gate_hierarchy <- read_csv("../gate_hierarchy.csv") %>%
+    filter(grepl(ct, Parent))
+  gr <- graph_from_edgelist(gate_hierarchy %>%
+                              select(Parent, GateName) %>%
+                              as.matrix())
+  ggraph(gr, layout="tree") +
+    geom_edge_diagonal() +
+    geom_node_label(aes(label=str_wrap(name, width=10))) +
+    theme_bw()
+
+  bf <- bfs(gr, root=ct, unreachable = FALSE)
+  ord <- V(gr)$name[bf$order[!is.na(bf$order)]]
+
+  # thresholds <- get_thresholds(cell_type)
+
+  ##### learn gates
+  df_ct <- df %>% filter(cell_type == ct_in)
+
+  ct_list <- list(ct = seq(nrow(df_ct)))
+  names(ct_list) <- ct
+  gate_list <- list()
+
+  for (gate_name in ord[-1]) {
+    print(gate_name)
+    context <- get_context(gate_name, gate_hierarchy)
+
+    if(context$non_naive) {
+      parent_idx <- setdiff(ct_list[[context$parent_name]],
+                            ct_list[[paste(ct, "Naive")]])
+    } else {
+      parent_idx <- ct_list[[context$parent_name]]
+    }
+    df_parent <- df_ct[parent_idx,]
+
+    gate <- get_fd_gate(df_parent, context)
+    # flowDensity::deGate(ff, channel="CD57")
+
+    # gate_list[[gate_name]] <- gate
+    filt <- apply_gate2(df_parent, gate)
+    ct_list[[gate_name]] <- parent_idx[which(filt)]
+
+    p <- plot_gate(df_parent, context, gate)
+    ggsave(p, filename = paste0("../figures/gating_train/", ct, "/",
+                                gate_name, ".png"),
+           width=7, height=6)
+  }
+
+
+}
+
+
+gate_and_plot <- function(df, cell_type, thresh, thresh_neut, thresh_mono,
+                          dir_out, fn, save_plots=TRUE) {
+  n_tot <- length(which(!grepl("debris|doublet", cell_type)))
 
   df_ab <- df %>% filter(grepl("cd4|cd8|dn|dp", cell_type))
 
   df_neut <- df %>% filter(cell_type=="neutrophil")
-  df_mono <- df %>% filter(grepl("monocyte", cell_type))
-  df_mono_cl <- df %>% filter(cell_type=="monocyte_classical")
+  df_myel <- df %>% filter(cell_type=="myeloid")
+  # df_mono_cl <- df %>% filter(cell_type=="monocyte_classical")
   df_cd4 <- df %>%
     filter(cell_type=="tcell_cd4") %>%
     mutate(cell_id = seq(length(which(cell_type=="tcell_cd4")))) %>%
@@ -635,7 +694,7 @@ gate_and_plot <- function(df, cell_type, thresh, dir_out, fn, save_plots=TRUE) {
   df_bcell <- df %>% filter(cell_type=="bcell")
   df_nkcell <- df %>% filter(cell_type=="nkcell")
 
-  df_mait <- df_ab %>% filter(CD4<thresh["CD4"] & CD161>thresh["CD161"])
+  # df_mait <- df_ab %>% filter(CD4<thresh["CD4"] & CD161>thresh["CD161"])
 
   df_cd4_naive <- df_cd4 %>% filter(CD45RA>thresh["CD45RA"] & CD27>thresh["CD27"])
   df_cd4_emra <- df_cd4 %>% filter(CD45RA>thresh["CD45RA"] & CD27<thresh["CD27"])
@@ -679,6 +738,10 @@ gate_and_plot <- function(df, cell_type, thresh, dir_out, fn, save_plots=TRUE) {
 
   df_nkcell_late <- df_nkcell %>% filter(CD57 > thresh["CD57"])
 
+  df_mono_cl <- df_myel %>% filter(CD14 > thresh["CD14"] & CD38 > thresh["CD38"])
+  df_mono_ncl <- df_myel %>% filter(CD14 < thresh["CD14"] & CD38 < thresh["CD38"])
+  df_mdc <- df_myel %>% filter(CD14 < thresh["CD14"] & CD38 > thresh["CD38"])
+
   df_cd4_all <- df_cd4 %>%
     mutate(naive = cell_id %in% df_cd4_naive$cell_id,
            emra = cell_id %in% df_cd4_emra$cell_id,
@@ -706,7 +769,7 @@ gate_and_plot <- function(df, cell_type, thresh, dir_out, fn, save_plots=TRUE) {
     select(where(is.logical))
 
   df_feat <- tibble(file = fn,
-                    `MAIT/NKT` = nrow(df_mait) / nrow(df_ab),
+                    # `MAIT/NKT` = nrow(df_mait) / nrow(df_ab),
                     `CD4 Naive` = nrow(df_cd4_naive) / nrow(df_cd4),
                     `CD4 EMRA` = nrow(df_cd4_emra) / nrow(df_cd4),
                     `CD4 EM1` = nrow(df_cd4_em1) / nrow(df_cd4),
@@ -730,6 +793,9 @@ gate_and_plot <- function(df, cell_type, thresh, dir_out, fn, save_plots=TRUE) {
                     `B cell Mem NotSw` = nrow(df_bcell_mem_nsw) / nrow(df_bcell),
                     `B cell Mem` = nrow(df_bcell_mem) / nrow(df_bcell),
                     `NK cell late` = nrow(df_nkcell_late) / nrow(df_nkcell),
+                    `Monocyte Classical` = nrow(df_mono_cl) / (nrow(df_mono_cl) + nrow(df_mono_ncl)),
+                    `Monocyte Nonclassical` = nrow(df_mono_ncl) / (nrow(df_mono_cl) + nrow(df_mono_ncl)),
+                    `mDC` = nrow(df_mdc) / n_tot,
                     ########
                     `CD4 CD57hi` = length(which(df_cd4_all$cd57hi)) / nrow(df_cd4),
                     `CD4 CD57hi out of EMRA` = get_ratio(df_cd4_all, "emra", "cd57hi"),
@@ -787,71 +853,76 @@ gate_and_plot <- function(df, cell_type, thresh, dir_out, fn, save_plots=TRUE) {
 
   if (save_plots) {
 
-    params <- c("CD4", "CD161")
-    p1 <- gg_flow_thresh(df_ab, params, thresh) + ggtitle("ab T cells")
-    p2 <- gg_flow_thresh(df_neut, params, thresh) + ggtitle("Neutrophils")
-    p3 <- gg_flow_thresh(df_mono, params, thresh) + ggtitle("Monocytes")
-    p <- p1 + p2 + p3 + plot_layout(ncol=2)
-    ggsave(p, filename=paste0(dir_out, "gating/mait_nkt/", fn, ".png"), width=12, height=10)
+    # params <- c("CD4", "CD161")
+    # p1 <- gg_flow_thresh(df_ab, params, thresh) + ggtitle("ab T cells")
+    # p2 <- gg_flow_thresh(df_neut, params, thresh) + ggtitle("Neutrophils")
+    # p3 <- gg_flow_thresh(df_mono, params, thresh) + ggtitle("Monocytes")
+    # p <- p1 + p2 + p3 + plot_layout(ncol=2)
+    # ggsave(p, filename=paste0(dir_out, "gating/mait_nkt/", fn, ".png"), width=12, height=10)
 
     params <- c("CD45RA", "CD27")
-    p3 <- gg_flow_thresh(df_neut, params, thresh) + ggtitle("Neutrophils")
-    p1 <- gg_flow_thresh(df_cd4, params, thresh) + ggtitle("CD4 T cells")
-    p2 <- gg_flow_thresh(df_cd8, params, thresh) + ggtitle("CD8 T cells")
+    p3 <- gg_flow_thresh(df_neut, params, thresh, thresh_neut, thresh_mono) + ggtitle("Neutrophils")
+    p1 <- gg_flow_thresh(df_cd4, params, thresh, thresh_neut, thresh_mono) + ggtitle("CD4 T cells")
+    p2 <- gg_flow_thresh(df_cd8, params, thresh, thresh_neut, thresh_mono) + ggtitle("CD8 T cells")
     p <- p1 + p2 + p3 + plot_layout(ncol=2)
     ggsave(p, filename=paste0(dir_out, "gating/tcell_mem/", fn, ".png"), width=12, height=10)
 
     params <- c("CD27", "CD197")
-    p1 <- gg_flow_thresh(df_cd4_cd45ralo, params, thresh) + ggtitle("CD4 T cells")
-    p2 <- gg_flow_thresh(df_cd8_cd45ralo, params, thresh) + ggtitle("CD8 T cells")
-    p3 <- gg_flow_thresh(df_neut, params, thresh) + ggtitle("Neutrophils")
+    p1 <- gg_flow_thresh(df_cd4_cd45ralo, params, thresh, thresh_neut, thresh_mono) + ggtitle("CD4 T cells")
+    p2 <- gg_flow_thresh(df_cd8_cd45ralo, params, thresh, thresh_neut, thresh_mono) + ggtitle("CD8 T cells")
+    p3 <- gg_flow_thresh(df_neut, params, thresh, thresh_neut, thresh_mono) + ggtitle("Neutrophils")
     p <- p1 + p2 + p3 + plot_layout(ncol=2)
     ggsave(p, filename=paste0(dir_out, "gating/tcell_em_cm/", fn, ".png"), width=12, height=10)
 
     params <- c("CD38", "HLA-DR")
     p1 <- gg_flow_gate(df_cd4, params, gate_act) + ggtitle("CD4 T cells")
     p2 <- gg_flow_gate(df_cd8, params, gate_act) + ggtitle("CD8 T cells")
-    p3 <- gg_flow_thresh(df_neut, params, thresh) + ggtitle("Neutrophils")
-    p3 <- gg_flow_thresh(df_bcell, params, thresh) + ggtitle("B cells")
+    p3 <- gg_flow_thresh(df_neut, params, thresh, thresh_neut, thresh_mono) + ggtitle("Neutrophils")
+    p3 <- gg_flow_thresh(df_myel, params, thresh, thresh_neut, thresh_mono) + ggtitle("Myeloid")
     p <- p1 + p2 + p3 + plot_layout(ncol=2)
     ggsave(p, filename=paste0(dir_out, "gating/tcell_act/", fn, ".png"), width=12, height=10)
 
     params <- c("CD27", "IgD")
-    p1 <- gg_flow_thresh(df_bcell, params, thresh) + ggtitle("B cells")
-    p2 <- gg_flow_thresh(df_neut, params, thresh) + ggtitle("Neutrophils")
-    p3 <- gg_flow_thresh(df_mono, params, thresh) + ggtitle("Monocytes")
+    p1 <- gg_flow_thresh(df_bcell, params, thresh, thresh_neut, thresh_mono) + ggtitle("B cells")
+    p2 <- gg_flow_thresh(df_neut, params, thresh, thresh_neut, thresh_mono) + ggtitle("Neutrophils")
+    p3 <- gg_flow_thresh(df_myel, params, thresh, thresh_neut, thresh_mono) + ggtitle("Myeloid")
     p <- p1 + p2 + p3 + plot_layout(ncol=2)
     ggsave(p, filename=paste0(dir_out, "gating/bcell_mem/", fn, ".png"), width=12, height=10)
 
     params <- c("CD25", "CD127")
     p1 <- gg_flow_gate(df_cd4_nn, params, gate_treg) + ggtitle("Non-naive CD4 T cells")
-    p2 <- gg_flow_thresh(df_neut, params, thresh) + ggtitle("Neutrophils")
-    p3 <- gg_flow_thresh(df_mono, params, thresh) + ggtitle("Monocytes")
+    p2 <- gg_flow_thresh(df_neut, params, thresh, thresh_neut, thresh_mono) + ggtitle("Neutrophils")
+    p3 <- gg_flow_thresh(df_myel, params, thresh, thresh_neut, thresh_mono) + ggtitle("Myeloid")
     p <- p1 + p2 + p3 + plot_layout(ncol=2)
     ggsave(p, filename=paste0(dir_out, "gating/treg/", fn, ".png"), width=12, height=10)
 
     params <- c("CD185", "CD4")
-    p1 <- gg_flow_thresh(df_cd4_nn, params, thresh) + ggtitle("Non-naive CD4 T cells")
-    p2 <- gg_flow_thresh(df_neut, params, thresh) + ggtitle("Neutrophils")
-    p3 <- gg_flow_thresh(df_mono, params, thresh) + ggtitle("Monocytes")
+    p1 <- gg_flow_thresh(df_cd4_nn, params, thresh, thresh_neut, thresh_mono) + ggtitle("Non-naive CD4 T cells")
+    p2 <- gg_flow_thresh(df_neut, params, thresh, thresh_neut, thresh_mono) + ggtitle("Neutrophils")
+    p3 <- gg_flow_thresh(df_myel, params, thresh, thresh_neut, thresh_mono) + ggtitle("Myeloid")
     p <- p1 + p2 + p3 + plot_layout(ncol=2)
     ggsave(p, filename=paste0(dir_out, "gating/tfh/", fn, ".png"), width=12, height=10)
 
     params <- c("CD196", "CD183")
-    p1 <- gg_flow_thresh(df_cd4_cd185n, params, thresh) + ggtitle("Non-naive CD185lo CD4 T cells")
-    p2 <- gg_flow_thresh(df_neut, params, thresh) + ggtitle("Neutrophils")
-    p3 <- gg_flow_thresh(df_mono, params, thresh) + ggtitle("Monocytes")
+    p1 <- gg_flow_thresh(df_cd4_cd185n, params, thresh, thresh_neut, thresh_mono) + ggtitle("Non-naive CD185lo CD4 T cells")
+    p2 <- gg_flow_thresh(df_neut, params, thresh, thresh_neut, thresh_mono) + ggtitle("Neutrophils")
+    p3 <- gg_flow_thresh(df_myel, params, thresh, thresh_neut, thresh_mono) + ggtitle("Myeloid")
     p <- p1 + p2 + p3 + plot_layout(ncol=2)
     ggsave(p, filename=paste0(dir_out, "gating/cd4_func/", fn, ".png"), width=12, height=10)
 
     params <- c("CD57", "CD56")
-    p1 <- gg_flow_thresh(df_nkcell, params, thresh) + ggtitle("NK cells")
-    p2 <- gg_flow_thresh(df_neut, params, thresh) + ggtitle("Neutrophils")
-    p3 <- gg_flow_thresh(df_cd4, params, thresh) + ggtitle("CD4 T cells")
-    p4 <- gg_flow_thresh(df_cd8, params, thresh) + ggtitle("CD8 T cells")
+    p1 <- gg_flow_thresh(df_nkcell, params, thresh, thresh_neut, thresh_mono) + ggtitle("NK cells")
+    p2 <- gg_flow_thresh(df_neut, params, thresh, thresh_neut, thresh_mono) + ggtitle("Neutrophils")
+    p3 <- gg_flow_thresh(df_cd4, params, thresh, thresh_neut, thresh_mono) + ggtitle("CD4 T cells")
+    p4 <- gg_flow_thresh(df_cd8, params, thresh, thresh_neut, thresh_mono) + ggtitle("CD8 T cells")
     p <- p1 + p2 + p3 + p4 + plot_layout(ncol=2)
     ggsave(p, filename=paste0(dir_out, "gating/nk_late_early/", fn, ".png"), width=12, height=10)
 
+    params <- c("CD14", "CD38")
+    p1 <- gg_flow_thresh(df_myel, params, thresh, thresh_neut, thresh_mono) + ggtitle("Myeloid")
+    p2 <- gg_flow_thresh(df_neut, params, thresh, thresh_neut, thresh_mono) + ggtitle("Neutrophils")
+    p <- p1 + p2 + plot_layout(ncol=2)
+    ggsave(p, filename=paste0(dir_out, "gating/mono/", fn, ".png"), width=12, height=5)
   }
 
   return(df_feat)
@@ -875,12 +946,20 @@ apply_gate <- function(df, params, gate) {
 
 
 get_treg_gate <- function(df, params, thresh) {
+
   t1 <- thresh[params[1]]
   t2 <- thresh[params[2]]
+  med <- median(df[[params[2]]])
   M <- max(df[[params[1]]])
 
-  gate <- tibble(var1 = c(t1, t1/2, t1/4, t1/4, M, M, t1),
-                 var2 = c(t2, t2, 0.75*t2, 0, 0, t2, t2))
+
+  x1 <- df %>% pull(params[1])
+  x2 <- df %>% pull(params[2])
+  x <- x2-x1
+  inter <- deGate(x, NA)
+
+  gate <- tibble(var1 = c(t1, med-inter, M, M, t1, t1),
+                 var2 = c(t1+inter, med, med, 0, 0, t1+inter))
   names(gate) <- params
   return(gate)
 }
@@ -908,7 +987,7 @@ estimate_distributions <- function(cell_type, df, fn,
   df_kdes <- lapply(to_use, function(ct) {
 
     if (ct == "all") {
-      cells <- which(!grepl("debris|agg", cell_type))
+      cells <- which(!grepl("debris|doublet", cell_type))
     } else {
       cells <- which(cell_type == ct)
     }
@@ -927,5 +1006,189 @@ estimate_distributions <- function(cell_type, df, fn,
 }
 
 
+##### from Mito
 
+get_one_th_fd <- function(df, cell_type, ct, channel) {
+  x <- df %>% filter(grepl(ct, cell_type)) %>% pull(channel)
+  deGate(x, channel)
+}
+
+get_two_th_fd <- function(df, cell_type, ct, channels, position) {
+  df_ct <- df %>% filter(grepl(ct, cell_type)) %>% select(all_of(channels))
+  x <- df_ct %>% as.matrix() %>% flowFrame()
+  fd <- flowDensity(x, channels, position)
+
+  if (position[1]) {
+    t1 <- quantile(df_ct[[channels[1]]][fd@index], 0.01)
+  } else {
+    t1 <- quantile(df_ct[[channels[1]]][fd@index], 0.99)
+  }
+
+  if (position[2]) {
+    t2 <- quantile(df_ct[[channels[2]]][fd@index], 0.01)
+  } else {
+    t2 <- quantile(df_ct[[channels[2]]][fd@index], 0.99)
+  }
+
+  return(c(t1,t2))
+}
+
+get_thresholds_density <- function(df, cell_type) {
+  thresholds <- setNames(rep(0, length(df)), names(df))
+  thresholds["CD57"] <- get_one_th_fd(df, cell_type, "nkcell", "CD57")
+
+  thresholds["CD45RA"] <- get_one_th_fd(df, cell_type, "tcell_cd4", "CD45RA")
+  thresholds["CD27"] <- get_one_th_fd(df, cell_type, "tcell_cd4", "CD27")
+  thresholds["CD197"] <- get_one_th_fd(df, cell_type, "tcell_cd4", "CD197")
+
+  thresholds["CD185"] <- get_one_th_fd(df, cell_type, "tcell_cd4", "CD185")
+  thresholds["CD183"] <- get_one_th_fd(df, cell_type, "tcell_cd4", "CD183")
+  thresholds["CD196"] <- get_one_th_fd(df, cell_type, "tcell_cd4", "CD196")
+
+  thresholds["CD14"] <- get_one_th_fd(df, cell_type, "myeloid", "CD14")
+  thresholds["CD38"] <- get_one_th_fd(df, cell_type, "myeloid", "CD38")
+
+  thresholds["IgD"] <- get_one_th_fd(df, cell_type, "bcell", "IgD")
+
+  thresholds[c("CD14", "CD38")] <- get_two_th_fd(df, cell_type, "myeloid",
+                                                 c("CD14", "CD38"), c(TRUE,TRUE))
+  x <- df %>% filter(cell_type == "tcell_cd8" & CD38 > thresholds["CD38"]) %>%
+    pull("HLA-DR")
+  thresholds["HLA-DR"] <- deGate(x,"HLA-DR")
+
+  x <- df %>% filter(cell_type == "tcell_cd4") %>%
+    pull("CD25")
+  thresholds["CD25"] <- deGate(x,"CD25")
+
+  return(thresholds)
+}
+
+
+get_hull <- function(data, context, gate_col) {
+  df <- data %>%
+    filter(.data[[gate_col]] %in% context$this_descendants) %>%
+    select(all_of(c(context$x_col, context$y_col)))
+  idx <- chull(df)
+  hull <- df[c(idx, idx[1]),]
+  return(hull)
+}
+
+
+plot_gate <- function(data, context, hull) {
+
+  x_col <- context$x_col
+  y_col <- context$y_col
+
+  hull[[x_col]] <- pmax(pmin(hull[[x_col]], max(data[[x_col]])),
+                        min(data[[x_col]]))
+  hull[[y_col]] <- pmax(pmin(hull[[y_col]], max(data[[y_col]])),
+                        min(data[[y_col]]))
+
+  p <- gg_flow(data, params = c(x_col, y_col)) +
+    geom_path(data=hull, color="red") +
+    ggtitle(paste0("Gate: ", context$this_name,
+                   "; parent: ", context$parent_name)) +
+    theme_bw(base_size=16)
+  return(p)
+}
+
+
+get_context <- function(gate_name, gate_hierarchy) {
+  # build tree as an igraph object
+  gr <- graph_from_edgelist(gate_hierarchy %>%
+                              select(GateName, Parent) %>%
+                              filter(!is.na(Parent)) %>%
+                              as.matrix())
+
+  # get all gate names downstream of current gate:
+  # those for which there exists a path to the current node
+  d <- distances(gr, to=gate_name, mode="out")
+  this_descendants <- names(which(!is.infinite(d[,1])))
+
+  # pull parent name and get everything downstream of it, too
+  parent_name <- gate_hierarchy %>% filter(GateName==gate_name) %>% pull(Parent)
+  d <- distances(gr, to=parent_name, mode="out")
+  parent_descendants <- names(which(!is.infinite(d[,1])))
+
+  # channels to gate on
+  x_col <- gate_hierarchy %>% filter(GateName==gate_name) %>% pull(Channel1)
+  y_col <- gate_hierarchy %>% filter(GateName==gate_name) %>% pull(Channel2)
+
+  # positive or negative for channels
+  x_loc <- gate_hierarchy %>% filter(GateName==gate_name) %>% pull(Location1)
+  y_loc <- gate_hierarchy %>% filter(GateName==gate_name) %>% pull(Location2)
+
+  non_naive <- if_else(!is.na(gate_hierarchy %>% filter(GateName==gate_name) %>% pull(NonNaive)),
+                       TRUE, FALSE)
+
+  context <- list(this_name = gate_name,
+                  this_descendants = this_descendants,
+                  parent_name = parent_name,
+                  parent_descendants = parent_descendants,
+                  x_col = x_col,
+                  y_col = y_col,
+                  x_loc = x_loc,
+                  y_loc = y_loc,
+                  non_naive = non_naive)
+  return(context)
+}
+
+rectangle_gate <- function(df, thresholds, x_col, y_col, x_loc, y_loc) {
+  x_lim <- if_else(x_loc=="hi", max(df[[x_col]]), min(df[[x_col]]))
+  y_lim <- if_else(y_loc=="hi", max(df[[y_col]]), min(df[[y_col]]))
+
+  x_th <- thresholds[x_col]
+  y_th <- thresholds[y_col]
+
+  gate <- tibble(x = c(x_th, x_th, x_lim, x_lim, x_th),
+                 y = c(y_th, y_lim, y_lim, y_th, y_th))
+  names(gate) <- c(x_col, y_col)
+  return(gate)
+}
+
+half_plane_gate <- function(df, thresholds, x_col, y_col, x_loc) {
+  x_lim <- if_else(x_loc=="hi", max(df[[x_col]]), min(df[[x_col]]))
+  x_th <- thresholds[x_col]
+
+  y_min <- min(df[[y_col]])
+  y_max <- max(df[[y_col]])
+
+  gate <- tibble(x = c(x_th, x_th, x_lim, x_lim, x_th),
+                 y = c(y_min, y_max, y_max, y_min, y_min))
+  names(gate) <- c(x_col, y_col)
+  return(gate)
+}
+
+get_fd_gate <- function(df, context) {
+  ff <- flowFrame(as.matrix(df))
+  fd <- flowDensity(ff, channels = c(context$x_col, context$y_col),
+              position = c(context$x_loc, context$y_loc)=="hi",
+              ellip.gate=FALSE)
+  return(as_tibble(fd@filter))
+}
+
+get_rectangle_gate <- function(df, thresholds, context) {
+  if (is.na(context$y_loc)) {
+    gate <- half_plane_gate(df, thresholds,
+                            context$x_col, context$y_col,
+                            context$x_loc)
+  } else {
+    gate <-   rectangle_gate(df, thresholds,
+                             context$x_col, context$y_col,
+                             context$x_loc, context$y_loc)
+  }
+
+  return(gate)
+}
+
+apply_gate2 <- function(df, gate) {
+  x_col <- names(gate)[1]
+  y_col <- names(gate)[2]
+
+  pip <- point.in.polygon(df %>% pull(x_col),
+                          df %>% pull(y_col),
+                          gate %>% pull(x_col),
+                          gate %>% pull(y_col))
+  return(pip > 0)
+}
 

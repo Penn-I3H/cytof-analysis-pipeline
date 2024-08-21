@@ -7,7 +7,8 @@
 #' @importFrom readr read_csv write_csv
 #' @importFrom stringr str_split fixed str_replace str_remove
 #' @importFrom tibble tibble as_tibble
-#' @importFrom flowCore read.FCS flowFrame
+#' @importFrom flowCore read.FCS flowFrame write.FCS
+#' @importFrom flowDensity flowDensity deGate
 #' @importFrom KernSmooth bkde
 #' @importFrom uwot umap
 #' @importFrom RcppHNSW hnsw_knn
