@@ -46,6 +46,7 @@ RUN Rscript -e "BiocManager::install(version = '3.19')"
 RUN Rscript -e "BiocManager::install('cytolib', verbose=TRUE)"
 RUN Rscript -e "library(cytolib)" # sanity check
 RUN Rscript -e "BiocManager::install('flowCore')"
+RUN Rscript -e "BiocManager::install('flowDensity')"
 
 # install CL2
 RUN Rscript -e "install.packages('./dependencies/CL2', repos=NULL, type='source')"
