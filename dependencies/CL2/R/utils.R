@@ -487,7 +487,7 @@ gate_detailed_phenos <- function(df, x_full, cell_type, dir_out, fn) {
       return(NULL)
     }
 
-    apply_gate_hierarchy(df, cell_type, mem_cd4, mem_cd8, thresh, fn, ct)
+    apply_gate_hierarchy(df, cell_type, mem_cd4, mem_cd8, thresh, dir_out, fn, ct)
   }) %>% do.call(what=rbind) %>%
     pivot_wider(names_from="feature", values_from="frac")
 
@@ -496,7 +496,7 @@ gate_detailed_phenos <- function(df, x_full, cell_type, dir_out, fn) {
 
 
 apply_gate_hierarchy <- function(df, cell_type, mem_cd4, mem_cd8, thresh,
-                                 fn, ct="T cell CD4") {
+                                 dir_out, fn, ct="T cell CD4") {
 
   ##### parse hierarchy
   gate_hierarchy <- gate_hierarchy_full %>%
