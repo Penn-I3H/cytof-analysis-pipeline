@@ -1,8 +1,18 @@
-FROM rocker/r-ver:4.3.2
+FROM rocker/r-ver:4.4.0
 
 WORKDIR /service
 
 RUN apt clean && apt-get update && apt-get -y install alien
+
+# install dependencies
+RUN apt-get -y install wget
+
+# install Go
+RUN wget https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
+RUN  rm -rf /usr/local/go && tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
+ENV PATH="${PATH}:/usr/local/go/bin"
+# cleanup
+RUN rm -f go1.21.0.linux-amd64.tar.gz
 
 # R program dependencies
 RUN apt-get install -y libudunits2-dev && apt-get install -y libgeos-dev && apt-get install -y libproj-dev && apt-get -y install libnlopt-dev && apt-get -y install pkg-config && apt-get -y install gdal-bin && apt-get install -y libgdal-dev
@@ -23,7 +33,7 @@ RUN Rscript -e "install.packages('Matrix', type = 'source')"
 RUN Rscript -e "install.packages('irlba', type = 'source')"
 
 # various dependencies
-RUN Rscript -e "install.packages(c('KernSmooth', 'patchwork', 'uwot', 'ash', 'RColorBrewer', 'reshape2'), Ncpus = 10, dependencies=TRUE)"
+RUN Rscript -e "install.packages(c('KernSmooth', 'patchwork', 'uwot', 'ash', 'RColorBrewer', 'reshape2', 'sp', 'parallel'), Ncpus = 10, dependencies=TRUE)"
 RUN Rscript -e "install.packages(c('Rcpp', 'RcppArmadillo', 'RcppHNSW'), Ncpus = 10, dependencies=TRUE)"
 
 # igraph
@@ -32,9 +42,11 @@ RUN Rscript -e "install.packages(c('igraph'), Ncpus = 10, dependencies=TRUE)"
 # flowCore and its prerequisites
 RUN Rscript -e "install.packages(c('BiocManager'), Ncpus=10)"
 RUN Rscript -e "BiocManager::install('RProtoBufLib')"
-RUN Rscript -e "BiocManager::install('cytolib', version='3.18')"
+RUN Rscript -e "BiocManager::install(version = '3.19')"
+RUN Rscript -e "BiocManager::install('cytolib', verbose=TRUE)"
 RUN Rscript -e "library(cytolib)" # sanity check
 RUN Rscript -e "BiocManager::install('flowCore')"
+RUN Rscript -e "BiocManager::install('flowDensity')"
 
 # install CL2
 RUN Rscript -e "install.packages('./dependencies/CL2', repos=NULL, type='source')"
@@ -46,4 +58,8 @@ RUN ls /service
 
 RUN mkdir -p data
 
-ENTRYPOINT [ "Rscript", "/service/main.R" ]
+RUN go build -o /service/main main.go
+
+# ENTRYPOINT [ "Rscript", "/service/main_parallel.R" ]
+
+ENTRYPOINT [ "/service/main" ]

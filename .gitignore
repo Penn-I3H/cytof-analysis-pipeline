@@ -2,3 +2,11 @@ data
 .DS_Store
 .Rhistory
 .Rbuildignore
+dev.env
+.Rproj.user
+dependencies/CL2/src/*.o
+dependencies/CL2/src/*.so
+dependencies/CL2/CL2.Rproj
+dependencies/demo.R
+dependencies/gate_hierarchy.csv
+dependencies/figures/*
