@@ -26,14 +26,6 @@ func main() {
 	defaultCPU := runtime.GOMAXPROCS(0)
 	fmt.Println("DefaultCPU(s) ", defaultCPU)
 
-	// if cpu, ok := os.LookupEnv("CPU"); ok {
-	// 	desiredCPU, convertError = strconv.Atoi(cpu)
-	// 	if err != nil {
-	// 		fmt.Println(err)
-	// 		log.Fatalf("error converting cpu string to int")
-	// 	}
-	// }
-
 	files, err := os.ReadDir(inputDir)
 	if err != nil {
 		fmt.Println(err)
@@ -45,10 +37,8 @@ func main() {
 	results := make(chan string, numberOfAnalyses)
 
 	log.Println("Starting pipeline")
-	// runtime.GOMAXPROCS(totalCPU)
-	// fmt.Println("CPU(s) in use ", totalCPU)
 
-	NumConcurrentWorkers := totalCPU
+	NumConcurrentWorkers := 2 // concurrent workers set to 2
 	for i := 1; i <= NumConcurrentWorkers; i++ {
 		go worker(i, analyses, results)
 	}
@@ -63,8 +53,6 @@ func main() {
 	for j := 1; j <= numberOfAnalyses; j++ {
 		log.Println(<-results)
 	}
-
-	// runtime.GOMAXPROCS(defaultCPU)
 
 	log.Println("Analysis complete")
 }
