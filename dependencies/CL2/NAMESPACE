@@ -2,6 +2,7 @@
 
 export(analyze_cytof_file)
 export(create_dirs)
+import(Cleanet)
 import(dplyr)
 import(ggplot2)
 importFrom(KernSmooth,bkde)

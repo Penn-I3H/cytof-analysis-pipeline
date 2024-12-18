@@ -24,7 +24,8 @@ Imports:
   readr,
   tidyr,
   uwot,
-  flowDensity
+  flowDensity,
+  Cleanet
 LinkingTo: Rcpp, RcppArmadillo
 License: GPL-3
 Encoding: UTF-8

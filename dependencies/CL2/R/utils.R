@@ -232,7 +232,7 @@ plot_umap_major_only <- function(df, fn) {
                          "Debris", "Uncertain")
   pal_paired["Doublet"] <- "gray30"
 
-  plot_umap_ct(df %>% mutate(ct = if_else(grepl("Doublet", ct), "Doublet", ct)),
+  plot_umap_ct(df %>% mutate(ct = if_else(grepl("_", ct), "Doublet", ct)),
                "ct", fn, pal_paired, base_size=16)
 }
 
@@ -259,7 +259,7 @@ plot_umap_markers <- function(df, fn) {
 plot_dna_cd45 <- function(df, fn) {
   df <- df %>%
     filter(ct!="Uncertain") %>%
-    mutate(event = case_when(grepl("Doublet", ct) ~ "Doublet",
+    mutate(event = case_when(grepl("_", ct) ~ "Doublet",
                              grepl("Debris", ct) ~ "Debris",
                              TRUE ~ "Single cell"))
 
@@ -359,40 +359,42 @@ get_kdes <- function(df, cols, cell_type) {
 }
 
 
-detect_doublets <- function(df, cols, cell_type, thresh=5) {
+detect_doublets <- function(df, cols, cell_type, dir_out, fn, thresh=5) {
 
-  x0 <- as.matrix(df)[,setdiff(cols, "Event_length")]
+  cleanet_res <- cleanet(5*sinh(df), setdiff(cols, "Event_length"),
+                         cofactor=5, is_debris=cell_type=="Debris")
 
-  set.seed(0)
-  # sel_for_aug <- which(!cell_type %in% c("Debris", "Uncertain"))
-  sel_for_aug <- which(!cell_type %in% c("Debris"))
-  n_doub <- floor(length(sel_for_aug)/2)
+  singlet_clas <- cell_type[which(cleanet_res$status!="Doublet")]
+  doublet_clas <- classify_doublets(cleanet_res, singlet_clas)
+  df_exp_obs <- compare_doublets_exp_obs(doublet_clas, singlet_clas, cleanet_res)
 
-  sel1 <- sample(sel_for_aug, n_doub)
-  sel2 <- sample(sel_for_aug, n_doub)
-  x_doub <- asinh(sinh(x0[sel1,]) + sinh(x0[sel2,]))
+  cell_type[which(cleanet_res$status=="Doublet")] <- doublet_clas
+  cleanet_res$cell_type <- cell_type
+  # cleanet_res$df_exp_obs <- df_exp_obs
 
-  x_aug <- rbind(x_doub, x0[sel_for_aug,])
+  write_csv(df_exp_obs %>% arrange(-Observed),
+            file=paste0(dir_out, "/doublet_csv/doublet_", fn, ".csv"))
 
-  all_knn <- hnsw_knn(x_aug, k=15, distance= 'l2',
-                      n_threads=1, M=48)
-  n_nb_doub <- apply(all_knn$idx, 1, function(row) length(which(row<n_doub)))
+  p <- plot_expected_observed(df_exp_obs)
+  ggsave(p, filename=paste0(dir_out, "/doublet_fig/doublet_", fn, ".png"),
+         width=6.75, height=7)
 
-  sim_lab <- if_else(cell_type[sel1] < cell_type[sel2],
-                     paste0("Doublet_", cell_type[sel1], "_", cell_type[sel2]),
-                     paste0("Doublet_", cell_type[sel2], "_", cell_type[sel1]))
-  sim_lab_fac <- as.factor(sim_lab)
+  return(cleanet_res)
+}
 
-  knn_orig <- all_knn$idx[-seq(n_doub),]
 
-  doub_c <- doub_lab_c(knn_orig, sim_lab_fac, n_doub, length(levels(sim_lab_fac)))
-  doub_lab <- c("",levels(sim_lab_fac))[doub_c+1]
+plot_expected_observed <- function(df_exp_obs) {
+  df_text <- df_exp_obs %>%
+    filter(Observed > 0.03) %>%
+    mutate(hjust = if_else(Expected > 0.1, 1, 0))
 
-  ct_final <- cell_type
-  ct_final[sel_for_aug] <- if_else(n_nb_doub[-seq(n_doub)] >= thresh,
-                                   doub_lab,
-                                   cell_type[sel_for_aug])
-  return(ct_final)
+  ggplot(df_exp_obs, aes(x=Expected, y=Observed)) +
+    geom_point() +
+    geom_text(data=df_text, aes(label=Type, hjust=hjust), vjust=1) +
+    geom_abline(slope=1, intercept=0, linetype="dashed") +
+    ggtitle(paste0("Doublet distribution for ", fn)) +
+    theme_bw(base_size=16) +
+    theme(plot.title = element_text(size=16))
 }
 
 

@@ -22,4 +22,5 @@
 #' @importFrom grDevices chull hcl hsv
 #' @importFrom stats cor quantile sd setNames
 #' @importFrom utils combn
+#' @import Cleanet
 NULL
