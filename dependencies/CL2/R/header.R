@@ -19,4 +19,7 @@
 #' @importFrom igraph membership components as_edgelist topological.sort bfs
 #' @importFrom patchwork wrap_plots plot_layout plot_annotation
 #' @importFrom sp point.in.polygon
+#' @importFrom grDevices chull hcl hsv
+#' @importFrom stats cor quantile sd setNames
+#' @importFrom utils combn
 NULL
