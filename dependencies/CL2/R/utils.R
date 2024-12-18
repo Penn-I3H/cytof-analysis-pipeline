@@ -14,6 +14,7 @@ read_data <- function(ff) {
   nice_names <- pdata$desc[markers] %>%
     str_split("_") %>%
     sapply(function(x) x[2])
+
   bead_ch <- which(nice_names=="Bead")
   nice_names[bead_ch] <- pdata$desc[markers[bead_ch]]
   colnames(data)[seq_along(markers)] <- nice_names
@@ -22,11 +23,25 @@ read_data <- function(ff) {
 }
 
 
-plot_cleanup_gate <- function(df, cutoffs, marker) {
+plot_cleanup_gate <- function(df, cutoffs, marker, perc) {
+  t0 <- min(df$Time)
+  t1 <- max(df$Time)
+  tdiff <- t1-t0
+  t0 <- t0 - 0.05*tdiff
+  t1 <- t1 + 0.05*tdiff
+  m0 <- cutoffs[[marker]][1]
+  m1 <- cutoffs[[marker]][2]
+
+  df_gate <- tibble(Time = c(t0, t0, t1, t1, t0),
+                 Marker = c(m0, m1, m1, m0, m0))
+  df_text <- tibble(label = paste0(round(100*perc,2), "%"),
+                    t1=t1, m1=m1)
+
   gg_flow(df, params=c("Time", marker)) +
-    geom_hline(yintercept=cutoffs[[marker]][1], color="red") +
-    geom_hline(yintercept=cutoffs[[marker]][2], color="red") +
-    guides(fill="none")
+    geom_path(data=df_gate, aes(x=Time, y=Marker), color="red") +
+    geom_label(data=df_text, aes(x=(t1+t0)/2, y=1.05*m1, label=label), alpha=0.7) +
+    guides(fill="none") +
+    theme_bw(base_size=16)
 }
 
 
@@ -65,12 +80,12 @@ pregate_data <- function(df, fn, dir_out, plot=FALSE) {
   df6 <- df[which(!event_type %in% labels[seq(6)]),]
 
   if(plot) {
-    p1 <- plot_cleanup_gate(df, cutoffs, markers[1])
-    p2 <- plot_cleanup_gate(df1, cutoffs, markers[2])
-    p3 <- plot_cleanup_gate(df2, cutoffs, markers[3])
-    p4 <- plot_cleanup_gate(df3, cutoffs, markers[4])
-    p5 <- plot_cleanup_gate(df4, cutoffs, markers[5])
-    p6 <- plot_cleanup_gate(df5, cutoffs, markers[6])
+    p1 <- plot_cleanup_gate(df, cutoffs, markers[1], nrow(df1)/nrow(df))
+    p2 <- plot_cleanup_gate(df1, cutoffs, markers[2], nrow(df2)/nrow(df1))
+    p3 <- plot_cleanup_gate(df2, cutoffs, markers[3], nrow(df3)/nrow(df2))
+    p4 <- plot_cleanup_gate(df3, cutoffs, markers[4], nrow(df4)/nrow(df3))
+    p5 <- plot_cleanup_gate(df4, cutoffs, markers[5], nrow(df5)/nrow(df4))
+    p6 <- plot_cleanup_gate(df5, cutoffs, markers[6], nrow(df6)/nrow(df5))
     p <- p1 + p2 + p3 + p4 + p5 + p6 + plot_layout(ncol=3)
     ggsave(p, filename = paste0(dir_out, "cleanup_gates/", fn, ".png"),
            width=9, height=6)
@@ -187,7 +202,7 @@ plot_umap_major <- function(df, fn) {
                          "B cell", "Plasmablast",
                          "Basophil", "pDC",
                          "T cell", "NK cell",
-                         "B cell lymphoma", "Myeloid",
+                         "Doublet", "Myeloid",
                          "Debris", "Uncertain")
 
   p1 <- plot_umap_ct(df, "ct", fn, pal_paired)
@@ -207,6 +222,39 @@ plot_umap_major <- function(df, fn) {
   return(p)
 }
 
+plot_umap_major_only <- function(df, fn) {
+  pal_paired <- brewer.pal(12, "Paired")
+  names(pal_paired) <- c("Neutrophil", "Eosinophil",
+                         "B cell", "Plasmablast",
+                         "Basophil", "pDC",
+                         "T cell", "NK cell",
+                         "Doublet", "Myeloid",
+                         "Debris", "Uncertain")
+  pal_paired["Doublet"] <- "gray30"
+
+  plot_umap_ct(df %>% mutate(ct = if_else(grepl("Doublet", ct), "Doublet", ct)),
+               "ct", fn, pal_paired, base_size=16)
+}
+
+
+plot_umap_markers <- function(df, fn) {
+
+  p1 <- plot_umap_channel(df, "CD45", base_size=12)
+  p2 <- plot_umap_channel(df, "CD3", base_size=12)
+  p3 <- plot_umap_channel(df, "CD19", base_size=12)
+  p4 <- plot_umap_channel(df, "CD66b", base_size=12)
+  p5 <- plot_umap_channel(df, "CD123", base_size=12)
+  p6 <- plot_umap_channel(df, "CD294", base_size=12)
+  p7 <- plot_umap_channel(df, "CD56", base_size=12)
+  p8 <- plot_umap_channel(df, "CD11c", base_size=12)
+  p9 <- plot_umap_channel(df, "DNA1", base_size=12)
+
+  p <- wrap_plots(p1, p2, p3, p4, p5, p6, p7, p8, p9, ncol=3) +
+    plot_annotation(title=fn)
+
+  return(p)
+}
+
 
 plot_dna_cd45 <- function(df, fn) {
   df <- df %>%
@@ -217,13 +265,14 @@ plot_dna_cd45 <- function(df, fn) {
 
   dark2 <- brewer.pal(8, "Dark2")
   pal_dark2 <- c("Debris"=dark2[6], "Single cell"=dark2[1], "Doublet"=dark2[2])
+  pal_dark2 <- c("Debris"="#FFFF99", "Single cell"=dark2[1], "Doublet"="gray30")
 
   ggplot(df, aes(x=DNA1, y=CD45, color=event)) +
     geom_point(size=0.5, shape=1, alpha=0.5) +
     guides(color = guide_legend(override.aes = list(alpha = 1, size = 2, shape=19))) +
-    scale_color_manual(values=pal_dark2) +
+    scale_color_manual(values=pal_dark2, name="Event type") +
     ggtitle(fn) +
-    theme_bw()
+    theme_bw(base_size=16)
 }
 
 
@@ -235,13 +284,24 @@ predict_cell_type <- function(data, defs, return_probs=FALSE) {
   mat <- coeff[,-1,drop=FALSE]
   intercept <- coeff[,1]
 
-  probs <- exp(t(mat %*% t(data[,colnames(mat),drop=FALSE]) + intercept)) %>%
+  probs_not_norm <- t(mat %*% t(data[,colnames(mat),drop=FALSE]) + intercept)
+
+  probs <- exp(probs_not_norm) %>%
     apply(1, function(row) row/sum(row)) %>% t()
 
   if (return_probs)
     return(probs)
 
   lab <- colnames(probs)[unname(apply(probs, 1, which.max))]
+
+  # df_prob <- tibble(lab=lab, raw=apply(probs_not_norm, 1, max), prob=apply(probs,1,max))
+  #
+  # df_prob %>%
+  #   filter(!grepl("Doublet", lab)) %>%
+  #   group_by(lab) %>%
+  #   summarise(raw = median(raw), prob=median(prob)) %>%
+  #   print()
+
   return(lab)
 }
 
@@ -304,7 +364,8 @@ detect_doublets <- function(df, cols, cell_type, thresh=5) {
   x0 <- as.matrix(df)[,setdiff(cols, "Event_length")]
 
   set.seed(0)
-  sel_for_aug <- which(!cell_type %in% c("Debris", "Uncertain"))
+  # sel_for_aug <- which(!cell_type %in% c("Debris", "Uncertain"))
+  sel_for_aug <- which(!cell_type %in% c("Debris"))
   n_doub <- floor(length(sel_for_aug)/2)
 
   sel1 <- sample(sel_for_aug, n_doub)

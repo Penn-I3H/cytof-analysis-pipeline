@@ -57,6 +57,26 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
   uncertain_cells <- which(confidence < 0.9 & !grepl("Debris|Neutr", cell_type))
   cell_type[uncertain_cells] <- "Uncertain"
 
+  df_uncertain <- as_tibble(pred_probs[uncertain_cells,]) %>%
+    mutate(label = cell_type[uncertain_cells],
+           conf = confidence[uncertain_cells])
+
+  df_tc <- df %>%
+    mutate(status = case_when(cell_type=="T cell" & confidence > 0.9 ~ "T cell confident",
+                              cell_type=="T cell" & confidence <= 0.9 ~ "T cell not confident",
+                              cell_type=="Debris" ~ "Debris",
+                              TRUE ~ "Other"))
+
+  ggplot(df_tc %>% filter(!grepl("Doublet", cell_type)), aes(x=CD3, y=CD45, color=status)) +
+    geom_point(size=0.5, alpha=0.5) +
+    theme_bw()
+
+  df_uncertain %>%
+    filter(label=="T cell") %>%
+    select(label, conf, `T cell`, `NK cell`, `Debris`)
+
+  ggplot(df, )
+
   ### Detect doublets ###
   print(paste("Doublet detection for file", fn, "..."))
   cell_type <- detect_doublets(df, cols, cell_type)
@@ -71,6 +91,35 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
   p_dna <- plot_dna_cd45(df_viz, fn)
   ggsave(p_dna, filename = paste0(dir_out, "DNA_CD45/", fn, ".png"),
          width=9, height=7)
+
+  # ### B cells in DORA
+  # sel_bcell <- which(cell_type=="B cell")
+  # round(pred_probs[sel_bcell,],3)
+  # df_kdes <- get_kdes(df, cols, cell_type) %>%
+  #   group_by(celltype, channel) %>%
+  #   mutate(density = density/max(density))
+  #
+  # p_kde <- ggplot(df_kdes %>% filter(!grepl("Doublet", celltype) & channel != "Event_length"),
+  #        aes(x=intensity, y=density, color=celltype)) +
+  #   geom_line() +
+  #   facet_wrap(~channel) +
+  #   theme_bw()
+  # ggsave(p_kde, filename = paste0(dir_out, "kde_ct/", fn, ".png"),
+  #        width=8.5, height=7)
+  #
+  # tmp <- predict_cell_type(x_full, defs_major, return_probs=FALSE)
+  #
+  # ### poster only
+  # p_markers <- plot_umap_markers(df_viz, fn)
+  # ggsave(p_markers, filename = paste0(dir_out, "umap_markers/", fn, ".pdf"),
+  #        width=12, height=10)
+  #
+  # ggsave(p_dna, filename = paste0(dir_out, "DNA_CD45_edit/", fn, ".png"),
+  #        width=8.5, height=7)
+  #
+  # p_cl <- plot_umap_major_only(df_viz, fn)
+  # ggsave(p_cl, filename = paste0(dir_out, "umap_major_only/", fn, ".png"),
+  #        width=8.5, height=7)
 
   ### Refine T cell subsets ###
   tcells <- which(cell_type=="T cell")

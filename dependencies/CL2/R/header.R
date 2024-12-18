@@ -17,6 +17,6 @@
 #' @importFrom RColorBrewer brewer.pal
 #' @importFrom igraph graph_from_edgelist cluster_leiden V E E<- distances
 #' @importFrom igraph membership components as_edgelist topological.sort bfs
-#' @importFrom patchwork wrap_plots plot_layout
+#' @importFrom patchwork wrap_plots plot_layout plot_annotation
 #' @importFrom sp point.in.polygon
 NULL
