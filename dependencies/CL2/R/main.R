@@ -30,7 +30,8 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
   df_raw <- ff %>%
     read_data() %>%
     as_tibble()
-  event_type <- pregate_data(df_raw, fn, dir_out, plot=TRUE)
+  pregating <- pregate_data(df_raw, fn, dir_out, plot=TRUE)
+  event_type <- pregating$event_type
   channels_remove <- "Time|Bead|Live|Center|Offset|Residual|Width"
   channels_keep <- names(df_raw)[!grepl(channels_remove, names(df_raw))]
 
@@ -62,11 +63,13 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
   cleanet_res <- detect_doublets(df, cols, cell_type, dir_out, fn)
   cell_type <- cleanet_res$cell_type
 
+  write_stats_file(pregating$df_stats, cell_type, dir_out, fn)
+
   ### Visualize main cell types ###
   df_viz <- df_um %>% mutate(ct = cell_type[sel_umap])
 
   p_markers <- plot_umap_markers(df_viz, fn)
-  ggsave(p_major, filename = paste0(dir_out, "umap_markers/", fn, ".png"),
+  ggsave(p_markers, filename = paste0(dir_out, "umap_markers/", fn, ".png"),
          width=16, height=10)
 
   p_major <- plot_umap_major_only(df_viz, fn)
@@ -100,7 +103,7 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
   }
 
   event_type[which(event_type=="")] <- cell_type
-  cell_idx <- which(!grepl("Debris|Doublet|Bead|Offset|Residual|Width|Center|Dead", event_type))
+  cell_idx <- which(!grepl("Debris|_|Bead|Offset|Residual|Width|Center|Dead", event_type))
   ff_clean <- ff[cell_idx,]
 
   write.FCS(ff_clean, paste0(dir_out, "fcs_clean/", fn, ".fcs"))

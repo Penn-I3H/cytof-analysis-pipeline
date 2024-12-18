@@ -99,10 +99,18 @@ pregate_data <- function(df, fn, dir_out, plot=FALSE) {
                      n_offset_gate = nrow(df4),
                      n_width_gate = nrow(df5),
                      n_live_gate = nrow(df6))
-  write_csv(df_stats, file = paste0(dir_out, "cleanup_stats/cleanup_stats_", fn, ".csv"),
-            progress=FALSE)
 
-  return(event_type)
+  return(list(event_type=event_type, df_stats=df_stats))
+}
+
+
+write_stats_file <- function(df_stats, cell_type, dir_out, fn) {
+  file_stats <- paste0(dir_out, "cleanup_stats/cleanup_stats_", fn, ".csv")
+  df_stats <- df_stats %>%
+    mutate(n_not_debris = length(which(cell_type!="Debris")),
+           n_cd45_single = length(which(!grepl("Debris|_", cell_type))))
+
+  write_csv(df_stats, file = file_stats, progress=FALSE)
 }
 
 
@@ -375,7 +383,7 @@ detect_doublets <- function(df, cols, cell_type, dir_out, fn, thresh=5) {
   write_csv(df_exp_obs %>% arrange(-Observed),
             file=paste0(dir_out, "/doublet_csv/doublet_", fn, ".csv"))
 
-  p <- plot_expected_observed(df_exp_obs)
+  p <- plot_expected_observed(df_exp_obs, fn)
   ggsave(p, filename=paste0(dir_out, "/doublet_fig/doublet_", fn, ".png"),
          width=6.75, height=7)
 
@@ -383,7 +391,7 @@ detect_doublets <- function(df, cols, cell_type, dir_out, fn, thresh=5) {
 }
 
 
-plot_expected_observed <- function(df_exp_obs) {
+plot_expected_observed <- function(df_exp_obs, fn) {
   df_text <- df_exp_obs %>%
     filter(Observed > 0.03) %>%
     mutate(hjust = if_else(Expected > 0.1, 1, 0))
