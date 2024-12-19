@@ -1,6 +1,5 @@
 
 
-
 #' @title Analyze a single CyTOF file
 #' @description Read and parse file, cluster and label main cell types, detect
 #' debris and doublets, gate downstream T and B cell subpopulations.
@@ -8,9 +7,10 @@
 #' @param dir_in A path to read fcs files from.
 #' @param dir_out A path to write output.
 #' @param cols Columns to use in analysis.
+#' @param cofactor Parameter for asinh transformation.
 #' @returns Nothing; all output written to file.
 #' @export
-analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
+analyze_cytof_file <- function(file, dir_in, dir_out, cols, cofactor=5) {
 
   dir_in <- paste0(dir_in, "/")
   dir_out <- paste0(dir_out, "/")
@@ -28,7 +28,7 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
   ### Read FCS file and pregate on Bead/Gaussian/LiveDead channels ###
   ff <- read.FCS(path, truncate_max_range = FALSE, emptyValue = FALSE)
   df_raw <- ff %>%
-    read_data() %>%
+    read_data(transform = FALSE) %>%
     as_tibble()
   pregating <- pregate_data(df_raw, fn, dir_out, plot=TRUE)
   event_type <- pregating$event_type
@@ -43,7 +43,11 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
   # df <- df[sample(nrow(df), min(nrow(df), 1e5)),]
   names(df) <- str_replace(names(df), "CD8a/CD64", "CD8a")
 
-  x_full <- df %>% as.matrix() %>% scale_data()
+  mat <- df %>%
+    mutate(across(!matches("length"), ~asinh(.x/cofactor))) %>%
+    as.matrix()
+  x_full <- mat %>%
+    scale_data()
   x <- x_full[,cols]
 
   ### Build UMAP on a subset of cells ###
@@ -60,7 +64,7 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
 
   ### Detect doublets ###
   print(paste("Doublet detection for file", fn, "..."))
-  cleanet_res <- detect_doublets(df, cols, cell_type, dir_out, fn)
+  cleanet_res <- detect_doublets(df, cols, cell_type, dir_out, fn, cofactor=cofactor)
   cell_type <- cleanet_res$cell_type
 
   write_stats_file(pregating$df_stats, cell_type, dir_out, fn)
@@ -81,46 +85,72 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols) {
          width=9, height=7)
 
   ### Refine T cell subsets ###
-  tcells <- which(cell_type=="T cell")
-  n_tcells <- length(tcells)
+  # tcells <- which(cell_type=="T cell")
+  # n_tcells <- length(tcells)
+  #
+  # if(n_tcells > 20) {
+  #   cols_tcell <- c("CD4", "CD8a", "TCRgd")
+  #   x_tcell <- x_full[tcells,cols_tcell]
+  #   pred_tcell <- predict_cell_type(x_tcell, defs_tcell)
+  #   cell_type[tcells] <- pred_tcell
+  # }
+  cell_type <- refine_subsets(x_full, cell_type, "T cell", defs_tcell)
+  cell_type <- refine_subsets(x_full, cell_type, "T cell CD4", defs_cd4_naive)
+  cell_type <- refine_subsets(x_full, cell_type, "T cell CD8", defs_cd8_naive)
+  cell_type <- refine_subsets(x_full, cell_type, "Myeloid", defs_myel)
 
-  if(n_tcells > 20) {
-    cols_tcell <- c("CD4", "CD8a", "TCRgd")
-    x_tcell <- x_full[tcells,cols_tcell]
-    pred_tcell <- predict_cell_type(x_tcell, defs_tcell)
-    cell_type[tcells] <- pred_tcell
-  }
-
-  ### Refine monocytes and mdc ###
-  mono <- which(cell_type=="Myeloid")
-  n_mono <- length(mono)
-
-  if (n_mono > 20) {
-    cols_mono <- c("CD11c", "CD14", "CD38", "CD123", "CD294", "HLA-DR", "CD45RA")
-    x_mono <- x_full[mono,cols_mono]
-    pred_mono <- predict_cell_type(x_mono, defs_myel)
-    cell_type[mono] <- pred_mono
-  }
+  # tcells_cd4 <- which(cell_type=="T cell CD4")
+  # n_tcells_cd4 <- length(tcells_cd4)
+  #
+  # if(n_tcells_cd4 > 20) {
+  #   cols_tcell_cd4 <- intersect(names(defs_cd4_naive), names(df))
+  #   x_tcell_cd4 <- x_full[tcells_cd4,cols_tcell_cd4]
+  #   pred_tcell_cd4 <- predict_cell_type(x_tcell_cd4, defs_cd4_naive)
+  #   cell_type[tcells_cd4] <- pred_tcell_cd4
+  # }
+  #
+  # tcells_cd8 <- which(cell_type=="T cell CD8")
+  # n_tcells_cd8 <- length(tcells_cd8)
+  #
+  # if(n_tcells_cd8 > 20) {
+  #   cols_tcell_cd8 <- intersect(names(defs_cd8_naive), names(df))
+  #   x_tcell_cd8 <- x_full[tcells_cd8,cols_tcell_cd8]
+  #   pred_tcell_cd8 <- predict_cell_type(x_tcell_cd8, defs_cd8_naive)
+  #   cell_type[tcells_cd8] <- pred_tcell_cd8
+  # }
+  #
+  # ### Refine monocytes and mdc ###
+  # mono <- which(cell_type=="Myeloid")
+  # n_mono <- length(mono)
+  #
+  # if (n_mono > 20) {
+  #   cols_mono <- c("CD11c", "CD14", "CD38", "CD123", "CD294", "HLA-DR", "CD45RA")
+  #   x_mono <- x_full[mono,cols_mono]
+  #   pred_mono <- predict_cell_type(x_mono, defs_myel)
+  #   cell_type[mono] <- pred_mono
+  # }
 
   event_type[which(event_type=="")] <- cell_type
-  cell_idx <- which(!grepl("Debris|_|Bead|Offset|Residual|Width|Center|Dead", event_type))
+  cell_idx <- which(!grepl("Debris|Doublet|_|Bead|Offset|Residual|Width|Center|Dead", event_type))
   ff_clean <- ff[cell_idx,]
 
-  write.FCS(ff_clean, paste0(dir_out, "fcs_clean/", fn, ".fcs"))
+  write.FCS(ff_clean, paste0(dir_out, "fcs_clean/", fn, "_cleaned.fcs"))
   df_file <- tibble(event_type=event_type)
   write_csv(df_file, file=paste0(dir_out, "files_labeled/", fn, ".csv"), progress=FALSE)
 
   backgate_major(df, cell_type, dir_out, fn)
 
   print(paste("Gating file", fn, "..."))
-  gate_detailed_phenos(df, x_full, cell_type, dir_out, fn)
+  gate_detailed_phenos(df, x_full, mat, cell_type, dir_out, fn)
 
   ### Compute density estimates to be used later for QC ###
   valid_cell_types <- c("Neutrophil", "Eosinophil", "Basophil", "B cell",
-                        "Myeloid", "T cell CD4", "T cell CD8", "T cell gd")
+                        "Myeloid", "T cell gd", "NK cell",
+                        "T cell CD4 Naive", "T cell CD4 Mem",
+                        "T cell CD8 Naive", "T cell CD8 Mem")
   channels <- setdiff(names(df), c("DNA1", "DNA2", "Event_length"))
-  df_kdes <- estimate_distributions(cell_type, df, fn, channels, valid_cell_types)
-  write_csv(df_kdes, file=paste0(dir_out, "/kdes_for_qc/", fn, ".csv"), progress=FALSE)
+  df_kdes <- estimate_distributions(cell_type, mat, fn, channels, valid_cell_types)
+  write_csv(df_kdes, file=paste0(dir_out, "/kdes_for_qc/kdes_", fn, ".csv"), progress=FALSE)
 
   print(paste("Finished file", fn, "!"))
   return(NULL)
@@ -157,7 +187,7 @@ create_dirs <- function(dir_out) {
   }
 
   dir.create(paste0(dir_out, "/backgating"), showWarnings = FALSE)
-  for (n in c("T cell CD4 Naive", "T cell CD8 Naive", "CD45 CD66b",
+  for (n in c("CD45RA CD27", "CD45 CD66b",
               "CD4 CD8a", "CD3 CD19", "CD11c CD14", "CD3 CD56",
               "CD16 CD66b", "CD123 CD294", "CD3 TCRgd", "CD14 CD38")) {
     dir.create(paste0(dir_out, "/backgating/", n), showWarnings = FALSE)

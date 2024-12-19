@@ -4,7 +4,7 @@
 \alias{analyze_cytof_file}
 \title{Analyze a single CyTOF file}
 \usage{
-analyze_cytof_file(file, dir_in, dir_out, cols)
+analyze_cytof_file(file, dir_in, dir_out, cols, cofactor = 5)
 }
 \arguments{
 \item{file}{FCS file name.}
@@ -14,6 +14,8 @@ analyze_cytof_file(file, dir_in, dir_out, cols)
 \item{dir_out}{A path to write output.}
 
 \item{cols}{Columns to use in analysis.}
+
+\item{cofactor}{Parameter for asinh transformation.}
 }
 \value{
 Nothing; all output written to file.

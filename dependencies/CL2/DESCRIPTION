@@ -1,7 +1,7 @@
 Package: CL2
 Type: Package
 Title: Automated CLeanup and CLustering for CyTOF data
-Version: 1.0.0
+Version: 1.1.0
 Author: Matei Ionita
 Maintainer: Matei Ionita <matei.ionita@gmail.com>
 Description: Unspervised analysis pipeline for raw CyTOF data.
@@ -14,7 +14,6 @@ Imports:
   igraph,
   Rcpp,
   RcppHNSW,
-  ash,
   reshape2,
   patchwork,
   sp,
@@ -24,7 +23,7 @@ Imports:
   readr,
   tidyr,
   uwot,
-  flowDensity,
+  scales,
   Cleanet
 LinkingTo: Rcpp, RcppArmadillo
 License: GPL-3
