@@ -56,11 +56,7 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols, cofactor=5) {
   df_um <- get_umap(df, x, sel_umap)
 
   ### Classify cells using pretrained logistic regression model ###
-  pred_probs <- predict_cell_type(x_full, defs_major, return_probs = TRUE)
-  cell_type <- colnames(pred_probs)[unname(apply(pred_probs, 1, which.max))]
-  confidence <- apply(pred_probs, 1, max)
-  uncertain_cells <- which(confidence < 0.9 & !grepl("Debris|Neutr", cell_type))
-  cell_type[uncertain_cells] <- "Uncertain"
+  cell_type <- classify_cells_logit(x_full, defs_major)
 
   ### Detect doublets ###
   print(paste("Doublet detection for file", fn, "..."))
@@ -84,51 +80,12 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols, cofactor=5) {
   ggsave(p_dna, filename = paste0(dir_out, "DNA_CD45/", fn, ".png"),
          width=9, height=7)
 
-  ### Refine T cell subsets ###
-  # tcells <- which(cell_type=="T cell")
-  # n_tcells <- length(tcells)
-  #
-  # if(n_tcells > 20) {
-  #   cols_tcell <- c("CD4", "CD8a", "TCRgd")
-  #   x_tcell <- x_full[tcells,cols_tcell]
-  #   pred_tcell <- predict_cell_type(x_tcell, defs_tcell)
-  #   cell_type[tcells] <- pred_tcell
-  # }
+  ### Refine cell subsets ###
+  # ct0 <- cell_type
   cell_type <- refine_subsets(x_full, cell_type, "T cell", defs_tcell)
-  cell_type <- refine_subsets(x_full, cell_type, "T cell CD4", defs_cd4_naive)
-  cell_type <- refine_subsets(x_full, cell_type, "T cell CD8", defs_cd8_naive)
+  cell_type <- refine_subsets(x_full, cell_type, "T cell CD4", defs_cd4_mem)
+  cell_type <- refine_subsets(x_full, cell_type, "T cell CD8", defs_cd8_mem)
   cell_type <- refine_subsets(x_full, cell_type, "Myeloid", defs_myel)
-
-  # tcells_cd4 <- which(cell_type=="T cell CD4")
-  # n_tcells_cd4 <- length(tcells_cd4)
-  #
-  # if(n_tcells_cd4 > 20) {
-  #   cols_tcell_cd4 <- intersect(names(defs_cd4_naive), names(df))
-  #   x_tcell_cd4 <- x_full[tcells_cd4,cols_tcell_cd4]
-  #   pred_tcell_cd4 <- predict_cell_type(x_tcell_cd4, defs_cd4_naive)
-  #   cell_type[tcells_cd4] <- pred_tcell_cd4
-  # }
-  #
-  # tcells_cd8 <- which(cell_type=="T cell CD8")
-  # n_tcells_cd8 <- length(tcells_cd8)
-  #
-  # if(n_tcells_cd8 > 20) {
-  #   cols_tcell_cd8 <- intersect(names(defs_cd8_naive), names(df))
-  #   x_tcell_cd8 <- x_full[tcells_cd8,cols_tcell_cd8]
-  #   pred_tcell_cd8 <- predict_cell_type(x_tcell_cd8, defs_cd8_naive)
-  #   cell_type[tcells_cd8] <- pred_tcell_cd8
-  # }
-  #
-  # ### Refine monocytes and mdc ###
-  # mono <- which(cell_type=="Myeloid")
-  # n_mono <- length(mono)
-  #
-  # if (n_mono > 20) {
-  #   cols_mono <- c("CD11c", "CD14", "CD38", "CD123", "CD294", "HLA-DR", "CD45RA")
-  #   x_mono <- x_full[mono,cols_mono]
-  #   pred_mono <- predict_cell_type(x_mono, defs_myel)
-  #   cell_type[mono] <- pred_mono
-  # }
 
   event_type[which(event_type=="")] <- cell_type
   cell_idx <- which(!grepl("Debris|Doublet|_|Bead|Offset|Residual|Width|Center|Dead", event_type))

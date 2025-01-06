@@ -261,6 +261,26 @@ plot_dna_cd45 <- function(df, fn) {
 }
 
 
+classify_cells_logit <- function(x_full, defs_major) {
+  pred_probs <- predict_cell_type(x_full, defs_major, return_probs = TRUE)
+  cell_type <- colnames(pred_probs)[unname(apply(pred_probs, 1, which.max))]
+  confidence <- apply(pred_probs, 1, function(row) {
+    sor <- sort(row, decreasing=TRUE)
+    tmp <- intersect( names(sor)[seq(2)], c("Debris", "Neutrophil") )
+    if (length(tmp)==2)
+      return(sor[1]-sor[2]+0.1)
+    return(sor[1]-sor[2])
+  })
+  uncertain_cells <- which(confidence < 0.1 & cell_type %in% c("pDC", "Plasmablast") |
+                             confidence < 0.05)
+  # confidence <- apply(pred_probs, 1, max)
+  # uncertain_cells <- which(confidence < 0.9 & !grepl("Debris|Neutr", cell_type))
+
+  cell_type[uncertain_cells] <- "Uncertain"
+  return(cell_type)
+}
+
+
 predict_cell_type <- function(data, defs, return_probs=FALSE) {
   coeff <- defs %>% select(-Phenotype)
 
@@ -426,6 +446,11 @@ backgate_major <- function(df, cell_type, dir_out, fn) {
   channels <- c("CD123", "CD294")
   cells <- which(!grepl("Debris|Doublet|_|Uncertain", cell_type))
   cts <- c("Eosinophil", "Basophil", "pDC")
+  backgate_one_plot(df, cell_type, channels, cells, cts, dir_out, fn)
+
+  channels <- c("CD38", "CD27")
+  cells <- which(!grepl("Debris|Doublet|_|Uncertain|Neutrophil|T cell|Mono", cell_type))
+  cts <- c("Plasmablast", "B cell")
   backgate_one_plot(df, cell_type, channels, cells, cts, dir_out, fn)
 
   channels <- c("CD45RA", "CD27")
