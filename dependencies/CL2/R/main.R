@@ -32,31 +32,23 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols, cofactor=5) {
     as_tibble()
   pregating <- pregate_data(df_raw, fn, dir_out, plot=TRUE)
   event_type <- pregating$event_type
-  channels_remove <- "Time|Bead|Live|Center|Offset|Residual|Width"
-  channels_keep <- names(df_raw)[!grepl(channels_remove, names(df_raw))]
 
-  ### Filter and scale data ###
-  df <- df_raw %>%
-    filter(event_type == "") %>%
-    select(all_of(channels_keep))
+  df <- filter_bead_gaussian_live(df_raw, event_type)
+  names(df) <- str_replace(names(df), "CD8a/CD64", "CD8a") ## for extension panel
+  # df <- df[sample(nrow(df), min(nrow(df), 5e4)),]
 
-  # df <- df[sample(nrow(df), min(nrow(df), 1e5)),]
-  names(df) <- str_replace(names(df), "CD8a/CD64", "CD8a")
-
-  mat <- df %>%
+  data_transf <- df %>%
     mutate(across(!matches("length"), ~asinh(.x/cofactor))) %>%
     as.matrix()
-  x_full <- mat %>%
-    scale_data()
-  x <- x_full[,cols]
+  data_scaled <- scale_data(data_transf)
 
   ### Build UMAP on a subset of cells ###
   n_sel <- min(nrow(df), 3e4)
   sel_umap <- sample(nrow(df), n_sel)
-  df_um <- get_umap(df, x, sel_umap)
+  df_um <- get_umap(df, data_scaled, cols, sel_umap)
 
   ### Classify cells using pretrained logistic regression model ###
-  cell_type <- classify_cells_logit(x_full, defs_major)
+  cell_type <- classify_cells_logit(data_scaled, defs_major)
 
   ### Detect doublets ###
   print(paste("Doublet detection for file", fn, "..."))
@@ -81,32 +73,26 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols, cofactor=5) {
          width=9, height=7)
 
   ### Refine cell subsets ###
-  # ct0 <- cell_type
-  cell_type <- refine_subsets(x_full, cell_type, "T cell", defs_tcell)
-  cell_type <- refine_subsets(x_full, cell_type, "T cell CD4", defs_cd4_mem)
-  cell_type <- refine_subsets(x_full, cell_type, "T cell CD8", defs_cd8_mem)
-  cell_type <- refine_subsets(x_full, cell_type, "Myeloid", defs_myel)
-
-  event_type[which(event_type=="")] <- cell_type
-  cell_idx <- which(!grepl("Debris|Doublet|_|Bead|Offset|Residual|Width|Center|Dead", event_type))
-  ff_clean <- ff[cell_idx,]
-
-  write.FCS(ff_clean, paste0(dir_out, "fcs_clean/", fn, "_cleaned.fcs"))
-  df_file <- tibble(event_type=event_type)
-  write_csv(df_file, file=paste0(dir_out, "files_labeled/", fn, ".csv"), progress=FALSE)
+  cell_type <- refine_subsets(data_scaled, cell_type, "T cell", defs_tcell)
+  cell_type <- refine_subsets(data_scaled, cell_type, "T cell CD4", defs_cd4_mem)
+  cell_type <- refine_subsets(data_scaled, cell_type, "T cell CD8", defs_cd8_mem)
+  cell_type <- refine_subsets(data_scaled, cell_type, "Myeloid", defs_myel)
+  cell_type <- refine_subsets(data_scaled, cell_type, "Neutrophil", defs_neut)
 
   backgate_major(df, cell_type, dir_out, fn)
 
   print(paste("Gating file", fn, "..."))
-  gate_detailed_phenos(df, x_full, mat, cell_type, dir_out, fn)
+  gate_detailed_phenos(df, data_scaled, data_transf, cell_type, dir_out, fn)
+
+  event_type[which(event_type=="")] <- cell_type
+  ff_clean <- clean_fcs_file(ff, event_type)
+  write.FCS(ff_clean, paste0(dir_out, "fcs_clean/", fn, "_cleaned.fcs"))
+
+  df_file <- tibble(event_type=event_type)
+  write_csv(df_file, file=paste0(dir_out, "files_labeled/", fn, ".csv"), progress=FALSE)
 
   ### Compute density estimates to be used later for QC ###
-  valid_cell_types <- c("Neutrophil", "Eosinophil", "Basophil", "B cell",
-                        "Myeloid", "T cell gd", "NK cell",
-                        "T cell CD4 Naive", "T cell CD4 Mem",
-                        "T cell CD8 Naive", "T cell CD8 Mem")
-  channels <- setdiff(names(df), c("DNA1", "DNA2", "Event_length"))
-  df_kdes <- estimate_distributions(cell_type, mat, fn, channels, valid_cell_types)
+  df_kdes <- estimate_distributions(cell_type, data_transf, fn)
   write_csv(df_kdes, file=paste0(dir_out, "/kdes_for_qc/kdes_", fn, ".csv"), progress=FALSE)
 
   print(paste("Finished file", fn, "!"))
@@ -150,6 +136,18 @@ create_dirs <- function(dir_out) {
     dir.create(paste0(dir_out, "/backgating/", n), showWarnings = FALSE)
   }
 }
+
+
+#### de novo AML : inv16, t(8:21), M0, M1, M2, M4, M5
+#### anything with MLD, Secondary
+
+# IS AML different for HD?
+# Is AML with MLD different from AML?
+# Does this change with therapy?
+# TP53, FLT3, IDH1/2: compare molecular subtypes after comparison of MLD
+
+
+
 
 
 
