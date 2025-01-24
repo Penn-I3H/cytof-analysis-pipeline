@@ -1,19 +1,24 @@
 
-read_data <- function(ff) {
+read_data <- function(ff, transform=TRUE) {
   pdata <- ff@parameters@data
 
   # remove unused channels
   non_metal <- grep("Time|Center|Offset|Width|Residual|length", pdata$name)
   markers <- setdiff(grep("_", pdata$desc), non_metal)
 
-  data <- cbind(asinh(ff@exprs[,markers]/5),
-                ff@exprs[,non_metal])
-  data[,c("Center", "Offset", "Width", "Residual")] <- asinh(data[,c("Center", "Offset", "Width", "Residual")]/5)
+  if (transform) {
+    data <- cbind(asinh(ff@exprs[,markers]/5),
+                  ff@exprs[,non_metal])
+    data[,c("Center", "Offset", "Width", "Residual")] <- asinh(data[,c("Center", "Offset", "Width", "Residual")]/5)
+  } else {
+    data <- ff@exprs[,c(markers, non_metal)]
+  }
 
   # use protein rather than isotope for channel names
   nice_names <- pdata$desc[markers] %>%
     str_split("_") %>%
     sapply(function(x) x[2])
+
   bead_ch <- which(nice_names=="Bead")
   nice_names[bead_ch] <- pdata$desc[markers[bead_ch]]
   colnames(data)[seq_along(markers)] <- nice_names
@@ -22,11 +27,24 @@ read_data <- function(ff) {
 }
 
 
-plot_cleanup_gate <- function(df, cutoffs, marker) {
-  gg_flow(df, params=c("Time", marker)) +
-    geom_hline(yintercept=cutoffs[[marker]][1], color="red") +
-    geom_hline(yintercept=cutoffs[[marker]][2], color="red") +
-    guides(fill="none")
+plot_cleanup_gate <- function(df, cutoffs, marker, perc) {
+  t0 <- min(df$Time)
+  t1 <- max(df$Time)
+  tdiff <- t1-t0
+  t0 <- t0 - 0.05*tdiff
+  t1 <- t1 + 0.05*tdiff
+  m0 <- cutoffs[[marker]][1]
+  m1 <- cutoffs[[marker]][2]
+
+  df_gate <- tibble(Time = c(t0, t0, t1, t1, t0),
+                 Marker = c(m0, m1, m1, m0, m0))
+  df_text <- tibble(label = paste0(round(100*perc,2), "%"),
+                    t1=t1, m1=m1)
+
+  plot_bin2d(df, channels = c("Time", marker), scales = c("linear", "asinh")) +
+    geom_path(data=df_gate, aes(x=Time, y=Marker), color="red") +
+    geom_label(data=df_text, aes(x=(t1+t0)/2, y=1.05*m1, label=label), alpha=0.7) +
+    theme(axis.text.x = element_text(angle=45))
 }
 
 
@@ -39,15 +57,53 @@ apply_cleanup_gate <- function(df, event_type, cutoffs, marker, label) {
   return(event_type)
 }
 
+asinh_trans <- trans_new(
+  name = "asinh",
+  transform = function(x) asinh(x / 5),
+  inverse = function(x) sinh(x) * 5
+)
+
+
+asinh_breaks_major <- c(0,10^seq(1,5))
+asinh_breaks_minor <- as.numeric(outer(seq(2,9),10^seq(1,4)))
+
+
+set_plot_scale <- function(p, scales) {
+
+  if (scales[1]=="asinh")
+    p <- p + scale_x_continuous(transform = asinh_trans,
+                                breaks = asinh_breaks_major,
+                                labels = asinh_breaks_major,
+                                minor_breaks = asinh_breaks_minor)
+
+  if (scales[2]=="asinh")
+    p <- p + scale_y_continuous(transform = asinh_trans,
+                                breaks = asinh_breaks_major,
+                                labels = asinh_breaks_major,
+                                minor_breaks = asinh_breaks_minor)
+  return(p)
+}
+
+
+plot_bin2d <- function(df, channels, scales=c("linear", "linear")) {
+  p <- ggplot(df, aes(x=.data[[channels[1]]], y=.data[[channels[2]]])) +
+    geom_bin_2d(bins=100) +
+    scale_fill_gradientn(colours = hsv(h = seq(0.6667,0, length.out = 11))) +
+    guides(fill="none") +
+    theme_bw(base_size=14)
+
+  return(set_plot_scale(p, scales))
+}
+
 
 pregate_data <- function(df, fn, dir_out, plot=FALSE) {
 
-  cutoffs <- list("140Ce_Bead" = c(0,asinh(500/5)),
-                  "Residual" = c(asinh(20/5), asinh(400/5)),
-                  "Center" = c(asinh(300/5), asinh(4000/5)),
-                  "Offset" = c(asinh(30/5), asinh(400/5)),
-                  "Width" = c(asinh(30/5), asinh(300/5)),
-                  "Live" = c(0, asinh(80/5)))
+  cutoffs <- list("140Ce_Bead" = c(0,500),
+                  "Residual" = c(20,400),
+                  "Center" = c(300,4000),
+                  "Offset" = c(30,400),
+                  "Width" = c(30,300),
+                  "Live" = c(0,80))
   markers <- names(cutoffs)
   labels <- c("Bead", "Residual", "Center", "Offset", "Width", "Dead")
 
@@ -65,12 +121,12 @@ pregate_data <- function(df, fn, dir_out, plot=FALSE) {
   df6 <- df[which(!event_type %in% labels[seq(6)]),]
 
   if(plot) {
-    p1 <- plot_cleanup_gate(df, cutoffs, markers[1])
-    p2 <- plot_cleanup_gate(df1, cutoffs, markers[2])
-    p3 <- plot_cleanup_gate(df2, cutoffs, markers[3])
-    p4 <- plot_cleanup_gate(df3, cutoffs, markers[4])
-    p5 <- plot_cleanup_gate(df4, cutoffs, markers[5])
-    p6 <- plot_cleanup_gate(df5, cutoffs, markers[6])
+    p1 <- plot_cleanup_gate(df, cutoffs, markers[1], nrow(df1)/nrow(df))
+    p2 <- plot_cleanup_gate(df1, cutoffs, markers[2], nrow(df2)/nrow(df1))
+    p3 <- plot_cleanup_gate(df2, cutoffs, markers[3], nrow(df3)/nrow(df2))
+    p4 <- plot_cleanup_gate(df3, cutoffs, markers[4], nrow(df4)/nrow(df3))
+    p5 <- plot_cleanup_gate(df4, cutoffs, markers[5], nrow(df5)/nrow(df4))
+    p6 <- plot_cleanup_gate(df5, cutoffs, markers[6], nrow(df6)/nrow(df5))
     p <- p1 + p2 + p3 + p4 + p5 + p6 + plot_layout(ncol=3)
     ggsave(p, filename = paste0(dir_out, "cleanup_gates/", fn, ".png"),
            width=9, height=6)
@@ -84,10 +140,18 @@ pregate_data <- function(df, fn, dir_out, plot=FALSE) {
                      n_offset_gate = nrow(df4),
                      n_width_gate = nrow(df5),
                      n_live_gate = nrow(df6))
-  write_csv(df_stats, file = paste0(dir_out, "cleanup_stats/cleanup_stats_", fn, ".csv"),
-            progress=FALSE)
 
-  return(event_type)
+  return(list(event_type=event_type, df_stats=df_stats))
+}
+
+
+write_stats_file <- function(df_stats, cell_type, dir_out, fn) {
+  file_stats <- paste0(dir_out, "cleanup_stats/cleanup_stats_", fn, ".csv")
+  df_stats <- df_stats %>%
+    mutate(n_not_debris = length(which(cell_type!="Debris")),
+           n_cd45_single = length(which(!grepl("Debris|Doublet|_", cell_type))))
+
+  write_csv(df_stats, file = file_stats, progress=FALSE)
 }
 
 
@@ -99,49 +163,9 @@ scale_data <- function(mat) {
 }
 
 
-gg_flow <- function(df, params, nbin=100, xlim=NULL, ylim=NULL, setlim=FALSE) {
-  mat <- as.matrix(df %>% select(all_of(params)))
+get_umap <- function(df, data_scaled, cols, sel_umap, dir1="DNA1", dir2="CD3") {
+  x <- data_scaled[,cols]
 
-  if (is.null(xlim)) {
-    m1 <- min(mat[,1])
-    M1 <- max(mat[,1])
-  } else {
-    m1 <- xlim[1]
-    M1 <- xlim[2]
-  }
-  if (is.null(ylim)) {
-    m2 <- min(mat[,2])
-    M2 <- max(mat[,2])
-  } else {
-    m2 <- ylim[1]
-    M2 <- ylim[2]
-  }
-
-  bins <- bin2(mat, nbin = c(nbin,nbin), ab=c(m1,m2,M1,M2))
-  df_bin <- melt(bins$nc)
-  df_bin$Var1 <- seq(m1,M1,length.out=nbin)[df_bin$Var1]
-  df_bin$Var2 <- seq(m2,M2,length.out=nbin)[df_bin$Var2]
-  names(df_bin) <- c(params, "count")
-
-  p <- ggplot(df_bin %>% filter(count > 0),
-         aes(x=.data[[params[[1]]]], y=.data[[params[[2]]]])) +
-    geom_tile(aes(fill=count)) +
-    geom_hline(yintercept = 0, linetype = "dotdash") +
-    geom_vline(xintercept = 0, linetype = "dotdash") +
-    scale_fill_gradientn(colours = hsv(h = seq(0.6667,0, length.out = 11))) +
-    theme_bw(base_size=13)
-
-  if (setlim) {
-    p <- p +
-      xlim(c(m1-0.1,M1+0.1)) +
-      ylim(c(m2-0.1,M2+0.1))
-  }
-
-  return(p)
-}
-
-
-get_umap <- function(df, x, sel_umap, dir1="DNA1", dir2="CD3") {
   um0 <- umap(x[sel_umap,])
   v <- x[sel_umap,dir1]
   cos1 <- sum(v*um0[,1]) / ( sqrt(sum(v*v)) * sqrt(sum(um0[,1]*um0[,1])) )
@@ -160,7 +184,9 @@ get_umap <- function(df, x, sel_umap, dir1="DNA1", dir2="CD3") {
 plot_umap_channel <- function(df, channel, base_size=8) {
   ggplot(df, aes(x=umap1, y=umap2, color=.data[[channel]])) +
     geom_point(size=0.5, shape=1, alpha=0.5) +
-    scale_color_gradient(low="black", high="red") +
+    scale_color_viridis_c(trans = asinh_trans,
+                          breaks = asinh_breaks_major,
+                          labels = asinh_breaks_major) +
     theme_bw(base_size=base_size) +
     theme(axis.title = element_blank())
 }
@@ -181,29 +207,36 @@ plot_umap_ct <- function(df, channel, fn, pal=NULL, base_size=8) {
 }
 
 
-plot_umap_major <- function(df, fn) {
+plot_umap_major_only <- function(df, fn) {
   pal_paired <- brewer.pal(12, "Paired")
   names(pal_paired) <- c("Neutrophil", "Eosinophil",
                          "B cell", "Plasmablast",
                          "Basophil", "pDC",
                          "T cell", "NK cell",
-                         "B cell lymphoma", "Myeloid",
+                         "Doublet", "Myeloid",
                          "Debris", "Uncertain")
+  pal_paired["Doublet"] <- "gray30"
 
-  p1 <- plot_umap_ct(df, "ct", fn, pal_paired)
-  p2 <- plot_umap_channel(df, "CD3")
-  p3 <- plot_umap_channel(df, "CD19")
-  p4 <- plot_umap_channel(df, "CD20")
-  p5 <- plot_umap_channel(df, "CD66b")
-  p6 <- plot_umap_channel(df, "CD16")
-  p7 <- plot_umap_channel(df, "CD123")
-  p8 <- plot_umap_channel(df, "CD294")
-  p9 <- plot_umap_channel(df, "CD56")
-  p10 <- plot_umap_channel(df, "CD11c")
-  p11 <- plot_umap_channel(df, "DNA1")
-  p12 <- plot_umap_channel(df, "CD45")
+  plot_umap_ct(df %>% mutate(ct = if_else(grepl("_", ct), "Doublet", ct)),
+               "ct", fn, pal_paired, base_size=16)
+}
 
-  p <- wrap_plots(p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, ncol=4)
+
+plot_umap_markers <- function(df, fn) {
+
+  p1 <- plot_umap_channel(df, "CD45", base_size=12)
+  p2 <- plot_umap_channel(df, "CD3", base_size=12)
+  p3 <- plot_umap_channel(df, "CD19", base_size=12)
+  p4 <- plot_umap_channel(df, "CD66b", base_size=12)
+  p5 <- plot_umap_channel(df, "CD123", base_size=12)
+  p6 <- plot_umap_channel(df, "CD294", base_size=12)
+  p7 <- plot_umap_channel(df, "CD56", base_size=12)
+  p8 <- plot_umap_channel(df, "CD11c", base_size=12)
+  p9 <- plot_umap_channel(df, "DNA1", base_size=12)
+
+  p <- wrap_plots(p1, p2, p3, p4, p5, p6, p7, p8, p9, ncol=3) +
+    plot_annotation(title=fn)
+
   return(p)
 }
 
@@ -211,19 +244,45 @@ plot_umap_major <- function(df, fn) {
 plot_dna_cd45 <- function(df, fn) {
   df <- df %>%
     filter(ct!="Uncertain") %>%
-    mutate(event = case_when(grepl("Doublet", ct) ~ "Doublet",
+    mutate(event = case_when(grepl("_", ct) ~ "Doublet",
                              grepl("Debris", ct) ~ "Debris",
                              TRUE ~ "Single cell"))
 
   dark2 <- brewer.pal(8, "Dark2")
-  pal_dark2 <- c("Debris"=dark2[6], "Single cell"=dark2[1], "Doublet"=dark2[2])
+  pal_dark2 <- c("Debris"="#FFFF99", "Single cell"=dark2[1], "Doublet"="gray30")
 
-  ggplot(df, aes(x=DNA1, y=CD45, color=event)) +
+  p <- ggplot(df, aes(x=DNA1, y=CD45, color=event)) +
     geom_point(size=0.5, shape=1, alpha=0.5) +
     guides(color = guide_legend(override.aes = list(alpha = 1, size = 2, shape=19))) +
-    scale_color_manual(values=pal_dark2) +
+    scale_color_manual(values=pal_dark2, name="Event type") +
     ggtitle(fn) +
-    theme_bw()
+    theme_bw(base_size=16)
+
+  return(set_plot_scale(p, c("asinh", "asinh")))
+}
+
+
+classify_cells_logit <- function(data_scaled, defs_major) {
+  pred_probs <- predict_cell_type(data_scaled, defs_major, return_probs = TRUE)
+  uniq <- unique(colnames(pred_probs))
+  pred_probs <- lapply(uniq, function(ct) {
+    apply(pred_probs[,which(colnames(pred_probs)==ct),drop=FALSE], 1, sum)
+  }) %>% do.call(what=cbind)
+  colnames(pred_probs) <- uniq
+  # return(pred_probs)
+  cell_type <- colnames(pred_probs)[unname(apply(pred_probs, 1, which.max))]
+  confidence <- apply(pred_probs, 1, function(row) {
+    sor <- sort(row, decreasing=TRUE)
+    tmp <- intersect( names(sor)[seq(2)], c("Debris", "Neutrophil") )
+    if (length(tmp)==2)
+      return(sor[1]-sor[2]+0.1)
+    return(sor[1]-sor[2])
+  })
+  uncertain_cells <- which(confidence < 0.1 & cell_type %in% c("pDC", "Plasmablast") |
+                             confidence < 0.05)
+
+  cell_type[uncertain_cells] <- "Uncertain"
+  return(cell_type)
 }
 
 
@@ -235,7 +294,9 @@ predict_cell_type <- function(data, defs, return_probs=FALSE) {
   mat <- coeff[,-1,drop=FALSE]
   intercept <- coeff[,1]
 
-  probs <- exp(t(mat %*% t(data[,colnames(mat),drop=FALSE]) + intercept)) %>%
+  probs_not_norm <- t(mat %*% t(data[,colnames(mat),drop=FALSE]) + intercept)
+
+  probs <- exp(probs_not_norm) %>%
     apply(1, function(row) row/sum(row)) %>% t()
 
   if (return_probs)
@@ -270,23 +331,26 @@ plot_kdes <- function(df_kdes, sel_vals, sel_col="celltype") {
 }
 
 
-get_kdes <- function(df, cols, cell_type) {
-  unq <- unique(cell_type)
+get_kdes <- function(x, cols, cell_type, unq) {
 
   df_kdes <- lapply(cols, function(ch) {
-    m <- min(df[[ch]])
-    M <- max(df[[ch]])
+    dat <- x[,ch]
+    m <- min(dat)
+    M <- max(dat)
     lapply(unq, function(ct) {
-      dat <- df[[ch]][which(cell_type==ct)]
+      dat_ct <- dat[which(cell_type==ct)]
 
-      if (length(dat) < 10)
-        dat <- jitter(rep(dat,10))
+      if (length(dat_ct) < 3)
+        return(NULL)
+
+      if (length(dat_ct) < 10)
+        dat <- jitter(rep(dat_ct,10))
       else {
-        if (sd(dat)==0)
-          dat <- jitter(dat)
+        if (sd(dat_ct)==0)
+          dat_ct <- jitter(dat_ct)
       }
 
-      kde <- bkde(dat, range.x = c(m,M), gridsize=101L)
+      kde <- bkde(dat_ct, range.x = c(m,M), gridsize=101L)
       return(tibble(celltype=ct,
                     channel=ch,
                     intensity=kde$x,
@@ -299,86 +363,103 @@ get_kdes <- function(df, cols, cell_type) {
 }
 
 
-detect_doublets <- function(df, cols, cell_type, thresh=5) {
+detect_doublets <- function(df, cols, cell_type, dir_out, fn, thresh=5, cofactor=cofactor) {
 
-  x0 <- as.matrix(df)[,setdiff(cols, "Event_length")]
+  cleanet_res <- cleanet(df, setdiff(cols, "Event_length"),
+                         cofactor=cofactor, is_debris=cell_type=="Debris")
 
-  set.seed(0)
-  sel_for_aug <- which(!cell_type %in% c("Debris", "Uncertain"))
-  n_doub <- floor(length(sel_for_aug)/2)
+  singlet_clas <- cell_type[which(cleanet_res$status!="Doublet")]
+  doublet_clas <- classify_doublets(cleanet_res, singlet_clas)
+  df_exp_obs <- compare_doublets_exp_obs(doublet_clas, singlet_clas, cleanet_res)
 
-  sel1 <- sample(sel_for_aug, n_doub)
-  sel2 <- sample(sel_for_aug, n_doub)
-  x_doub <- asinh(sinh(x0[sel1,]) + sinh(x0[sel2,]))
+  cell_type[which(cleanet_res$status=="Doublet")] <- doublet_clas
+  cleanet_res$cell_type <- cell_type
 
-  x_aug <- rbind(x_doub, x0[sel_for_aug,])
+  write_csv(df_exp_obs %>% arrange(-Observed),
+            file=paste0(dir_out, "/doublet_csv/doublet_", fn, ".csv"))
 
-  all_knn <- hnsw_knn(x_aug, k=15, distance= 'l2',
-                      n_threads=1, M=48)
-  n_nb_doub <- apply(all_knn$idx, 1, function(row) length(which(row<n_doub)))
+  p <- plot_expected_observed(df_exp_obs, fn)
+  ggsave(p, filename=paste0(dir_out, "/doublet_fig/doublet_", fn, ".png"),
+         width=6.75, height=7)
 
-  sim_lab <- if_else(cell_type[sel1] < cell_type[sel2],
-                     paste0("Doublet_", cell_type[sel1], "_", cell_type[sel2]),
-                     paste0("Doublet_", cell_type[sel2], "_", cell_type[sel1]))
-  sim_lab_fac <- as.factor(sim_lab)
+  return(cleanet_res)
+}
 
-  knn_orig <- all_knn$idx[-seq(n_doub),]
 
-  doub_c <- doub_lab_c(knn_orig, sim_lab_fac, n_doub, length(levels(sim_lab_fac)))
-  doub_lab <- c("",levels(sim_lab_fac))[doub_c+1]
+plot_expected_observed <- function(df_exp_obs, fn) {
+  df_text <- df_exp_obs %>%
+    filter(Observed > 0.03) %>%
+    mutate(hjust = if_else(Expected > 0.1, 1, 0))
 
-  ct_final <- cell_type
-  ct_final[sel_for_aug] <- if_else(n_nb_doub[-seq(n_doub)] >= thresh,
-                                   doub_lab,
-                                   cell_type[sel_for_aug])
-  return(ct_final)
+  ggplot(df_exp_obs, aes(x=Expected, y=Observed)) +
+    geom_point() +
+    geom_text(data=df_text, aes(label=Type, hjust=hjust), vjust=1) +
+    geom_abline(slope=1, intercept=0, linetype="dashed") +
+    ggtitle(paste0("Doublet distribution for ", fn)) +
+    theme_bw(base_size=16) +
+    theme(plot.title = element_text(size=16))
 }
 
 
 backgate_major <- function(df, cell_type, dir_out, fn) {
   channels <- c("CD4", "CD8a")
-  cells <- which(grepl("T cell", cell_type) & !grepl("Doublet", cell_type))
+  cells <- which(grepl("T cell", cell_type) & !grepl("Doublet|_", cell_type))
   cts <- c("T cell CD4", "T cell CD8", "T cell DN", "T cell gd")
   backgate_one_plot(df, cell_type, channels, cells, cts, dir_out, fn)
 
   channels <- c("CD3", "TCRgd")
-  cells <- which(grepl("T cell", cell_type) & !grepl("Doublet", cell_type))
+  cells <- which(grepl("T cell", cell_type) & !grepl("Doublet|_", cell_type))
   cts <- c("T cell CD4", "T cell CD8", "T cell DN", "T cell gd")
   backgate_one_plot(df, cell_type, channels, cells, cts, dir_out, fn)
 
   channels <- c("CD3", "CD19")
-  cells <- which(!grepl("Debris|Doublet|Uncertain", cell_type))
+  cells <- which(!grepl("Debris|Doublet|_|Uncertain", cell_type))
   cts <- c("T cell", "B cell")
   backgate_one_plot(df, cell_type, channels, cells, cts, dir_out, fn)
 
   channels <- c("CD45", "CD66b")
-  cells <- which(!grepl("Debris|Doublet|Uncertain", cell_type))
-  cts <- c("Neutrophil", "Eosinophil")
+  cells <- which(!grepl("Debris|Doublet|_|Uncertain", cell_type))
+  cts <- c("Neutrophil CD16hi", "Neutrophil CD16lo", "Eosinophil")
   backgate_one_plot(df, cell_type, channels, cells, cts, dir_out, fn)
 
   channels <- c("CD3", "CD56")
-  cells <- which(!grepl("Debris|Doublet|Uncertain", cell_type))
+  cells <- which(!grepl("Debris|Doublet|_|Uncertain", cell_type))
   cts <- c("T cell", "NK cell")
   backgate_one_plot(df, cell_type, channels, cells, cts, dir_out, fn)
 
   channels <- c("CD11c", "CD14")
-  cells <- which(!grepl("Debris|Doublet|Uncertain", cell_type))
-  cts <- c("Mono|mDC", "Neutrophil")
+  cells <- which(!grepl("Debris|Doublet|_|Uncertain", cell_type))
+  cts <- c("Mono|mDC", "Neutrophil CD16hi")
   backgate_one_plot(df, cell_type, channels, cells, cts, dir_out, fn)
 
   channels <- c("CD14", "CD38")
-  cells <- which(grepl("Mono|mDC", cell_type) & !grepl("Debris|Doublet|Uncertain", cell_type))
+  cells <- which(grepl("Mono|mDC", cell_type) & !grepl("Debris|Doublet|_|Uncertain", cell_type))
   cts <- c("Monocyte Classical", "Monocyte Nonclassical", "mDC")
   backgate_one_plot(df, cell_type, channels, cells, cts, dir_out, fn)
 
   channels <- c("CD16", "CD66b")
-  cells <- which(!grepl("Debris|Doublet|Uncertain", cell_type))
-  cts <- c("Eosinophil", "Neutrophil")
+  cells <- which(!grepl("Debris|Doublet|_|Uncertain", cell_type))
+  cts <- c("Eosinophil", "Neutrophil CD16hi", "Neutrophil CD16lo")
   backgate_one_plot(df, cell_type, channels, cells, cts, dir_out, fn)
 
   channels <- c("CD123", "CD294")
-  cells <- which(!grepl("Debris|Doublet|Uncertain", cell_type))
+  cells <- which(!grepl("Debris|Doublet|_|Uncertain", cell_type))
   cts <- c("Eosinophil", "Basophil", "pDC")
+  backgate_one_plot(df, cell_type, channels, cells, cts, dir_out, fn)
+
+  channels <- c("CD38", "CD27")
+  cells <- which(!grepl("Debris|Doublet|_|Uncertain|Neutrophil|T cell|Mono", cell_type))
+  cts <- c("Plasmablast", "B cell")
+  backgate_one_plot(df, cell_type, channels, cells, cts, dir_out, fn)
+
+  channels <- c("CD45RA", "CD27")
+  cells <- which(grepl("T cell CD4", cell_type) & !grepl("Doublet|_", cell_type))
+  cts <- c("T cell CD4 Naive", "T cell CD4 Mem")
+  backgate_one_plot(df, cell_type, channels, cells, cts, dir_out, fn)
+
+  channels <- c("CD45RA", "CD27")
+  cells <- which(grepl("T cell CD8", cell_type) & !grepl("Doublet|_", cell_type))
+  cts <- c("T cell CD8 Naive", "T cell CD8 Mem")
   backgate_one_plot(df, cell_type, channels, cells, cts, dir_out, fn)
 }
 
@@ -392,7 +473,9 @@ backgate_one_plot <- function(df, cell_type, channels, cells, cts, dir_out, fn) 
     label_array[grep(ct, label_array)] <- ct
   }
 
-  backgate(df[cells,channels], label_array, paste(channels, collapse=" "),
+  label_name <- paste(channels, collapse=" ")
+
+  backgate(df[cells,channels], label_array, label_name,
            cts, channels, dir_out, fn)
 }
 
@@ -404,13 +487,18 @@ backgate <- function(df, label_array, label_name, cts, channels, dir_out, fn) {
   pal <- gg_palette(length(cts)+1)
   names(pal) <- c("Other", cts)
 
-  p <- ggplot(df_plot, aes(x=.data[[channels[1]]], y=.data[[channels[2]]], color=label_array[sel])) +
+  p <- ggplot(df_plot, aes(x=.data[[channels[1]]],
+                           y=.data[[channels[2]]],
+                           color=label_array[sel])) +
     geom_point(size=0.3, alpha=0.3) +
     ggtitle(fn, subtitle = label_name) +
     scale_color_manual(name="Cell type", values=pal) +
     guides(color = guide_legend(override.aes = list(alpha = 1, size = 2, shape=19))) +
     theme_bw()
-  ggsave(paste0(dir_out, "backgating/", label_name, "/", fn, ".png"), width=7, height=6)
+  p <- set_plot_scale(p, c("asinh", "asinh"))
+  ggsave(p, filename=paste0(dir_out, "backgating/", label_name, "/",
+                            paste(cts, collapse=" "), "_", fn, ".png"),
+         width=7, height=6)
 }
 
 
@@ -420,83 +508,221 @@ gg_palette <- function(n) {
 }
 
 
-gate_detailed_phenos <- function(df, x_full, cell_type, dir_out, fn) {
-  unq <- unique(cell_type[which(!grepl("Debris|Doublet|Uncertain",cell_type))])
-  df_kdes <- get_kdes(df, names(df), cell_type)
+get_thresh_opt <- function(df, cell_type, unq, thresh, channel, pop1, pop2,
+                           w = c(1,1), search_func = search_opt) {
 
-  thresh <- get_thresholds_density(df, cell_type, conf_cell)
-  thresh_quant <- apply(df,2,function(col) quantile(col, 0.999))
+  pattern <- paste0(pop1,"|",pop2)
+
+  if (!any(grepl(pattern, unq)))
+    return(thresh[channel])
+
+  df_pop <- df %>% select(channel) %>%
+    mutate(ct=cell_type) %>% filter(grepl(pattern, ct) & !grepl("_|Doublet",ct))
+  class1_idx <- grep(pop1, df_pop$ct)
+  class2_idx <- grep(pop2, df_pop$ct)
+
+  if (length(class1_idx) < 5 | length(class2_idx) < 5)
+    return(thresh[channel])
+
+  opt <-  search_func(x=asinh(df_pop[[channel]]/5),
+                     class1_idx = class1_idx,
+                     class2_idx = class2_idx,
+                     w=w)
+  return(opt)
+}
+
+
+get_thresh_default <- function(df, mat) {
+  thresh <- setNames(rep(0, ncol(mat)), names(df))
+  thresh_quant <- apply(mat,2,function(col) quantile(col, 0.999))
   ch_020 <- c("CD25")
+  # ch_025 <- c("CD16")
   ch_050 <- c("CD194", "CD161")
-  thresh[ch_020] <- 0.2 * thresh_quant[ch_020]
-  thresh[ch_050] <- 0.5 * thresh_quant[ch_050]
+  thresh[ch_020] <- 0.20 * thresh_quant[ch_020]
+  # thresh[ch_025] <- 0.25 * thresh_quant[ch_025]
+  thresh[ch_050] <- 0.50 * thresh_quant[ch_050]
   thresh[which(thresh<=0)] <- 0.35 * thresh_quant[which(thresh<=0)]
+  return(thresh)
+}
 
-  if ("T cell CD8" %in% unq) {
-    mem_cd8 <- separate_mem(x_full, cell_type, ct="T cell CD8")
-    backgate(df %>% filter(cell_type=="T cell CD8"), mem_cd8, "T cell CD8 Naive",
-             c("T cell CD8 Naive", "T cell CD8 Mem"), c("CD45RA", "CD27"), dir_out, fn)
-  } else {
-    mem_cd8 <- NULL
+
+update_thresh_nk <- function(df, cell_type, unq, thresh) {
+  thresh["CD57"] <- get_thresh_opt(df, cell_type, unq, thresh, "CD57",
+                                   "T cell CD4 Naive|T cell CD8 Naive", "NK cell")
+  thresh["CD56"] <- get_thresh_opt(df, cell_type, unq, thresh, "CD56",
+                                   "T cell CD4 Naive|T cell CD8 Naive", "NK cell")
+  thresh["CD57"] <- max(thresh["CD57"], asinh(15/5))
+  return(thresh)
+}
+
+
+update_thresh_cd4_func <- function(df, data_scaled, cell_type, unq, thresh) {
+  ct_func <- refine_subsets(data_scaled, cell_type, "T cell CD4 Mem",
+                            defs_cd4_func, only_pred=TRUE)
+  df_func <- df %>% filter(cell_type=="T cell CD4 Mem")
+
+  thresh["CD183"] <- get_thresh_opt(df_func, ct_func, unique(ct_func), thresh, "CD183",
+                                    "T cell CD4 Other", "T cell CD4 Th1")
+  thresh["CD185"] <- get_thresh_opt(df_func, ct_func, unique(ct_func), thresh, "CD185",
+                                    "T cell CD4 Other", "T cell CD4 Tfh")
+
+  thresh["CD196"] <- get_thresh_opt(df, cell_type, unq, thresh, "CD196",
+                                    "T cell CD4 Naive|T cell CD8 Naive", "T cell CD4 Mem")
+
+  thresh["CD185"] <- max(thresh["CD185"], asinh(10/5))
+  thresh["CD196"] <- max(thresh["CD196"], asinh(5/5))
+  thresh["CD196"] <- min(thresh["CD196"], 0.5*max(asinh(df_func[["CD196"]]/5)))
+
+  sel_cd194 <- grep("T cell CD4 Naive|T cell CD4 Mem", cell_type)
+  df_cd194 <- df[sel_cd194,] %>%
+    mutate(ct = case_when(cell_type[sel_cd194]=="T cell CD4 Naive" ~ "T cell CD4 Naive",
+                          CD185 < 5*sinh(thresh["CD185"]) &
+                            CD183 < 5*sinh(thresh["CD183"]) ~ "Candidates",
+                          TRUE ~ "Other"))
+  thresh["CD194"] <- get_thresh_opt(df_cd194, df_cd194$ct, unique(df_cd194$ct),
+                                    thresh, "CD194",
+                                    "T cell CD4 Naive", "Candidates")
+  return(thresh)
+}
+
+
+gate_detailed_phenos <- function(df, data_scaled, data_transf, cell_type, dir_out, fn) {
+  unq <- unique(cell_type[which(!grepl("Debris|Doublet|_|Uncertain",cell_type))])
+  df_kdes <- get_kdes(data_transf, names(df), cell_type, unq)
+
+  thresh <- get_thresh_default(df, data_transf)
+  thresh <- update_thresh_nk(df, cell_type, unq, thresh)
+
+  if ("T cell CD4 Mem" %in% unq) {
+    thresh <- update_thresh_cd4_func(df, data_scaled, cell_type, unq, thresh)
   }
 
-  if ("T cell CD4" %in% unq) {
-    mem_cd4 <- separate_mem(x_full, cell_type, ct="T cell CD4")
-    backgate(df %>% filter(cell_type=="T cell CD4"), mem_cd4, "T cell CD4 Naive",
-             c("T cell CD4 Naive", "T cell CD4 Mem"), c("CD45RA", "CD27"), dir_out, fn)
+  p <- get_thresholds_plot(df_kdes, thresh)
+  ggsave(p, width=12, height=10,
+         filename=paste0(dir_out, "gating/thresholds/", fn, ".png"))
 
-    ###### big bug below, fix <2
-    if (length(table(mem_cd4)) == 2)
-      thresh["CD45RA"] <- search_opt(x=df %>% filter(cell_type=="T cell CD4") %>% pull("CD45RA"),
-                                     class1_idx = which(mem_cd4=="T cell CD4 Mem"),
-                                     class2_idx = which(mem_cd4=="T cell CD4 Naive"))
-  } else {
-    mem_cd4 <- NULL
-  }
+  df_feat_maj <- get_feat_major(cell_type, unq, fn)
+  write_csv(df_feat_maj,
+            file=paste0(dir_out, "/feat_major/feat_major_", fn, ".csv"))
 
-  ct_plot <- c("Neutrophil", "T cell CD4", "T cell CD8",
+  unq_no_mem <- unq %>% str_remove(" Naive") %>% str_remove(" Mem")
+  cts <- intersect(unq_no_mem, gate_hierarchy_full$Parent)
+
+  df_feat_adaptive <- lapply(cts, function(ct) {
+    if (!ct %in% unq_no_mem) {
+      message(paste(ct, "missing!"))
+      return(NULL)
+    }
+
+    apply_gate_hierarchy(df, cell_type, thresh, dir_out, fn, ct)
+  }) %>% do.call(what=rbind) %>%
+    pivot_wider(names_from="feature", values_from="frac") %>%
+    mutate(file=fn) %>%
+    relocate(file)
+
+  df_feat_gated <- df_feat_adaptive %>% select(!contains("out of"))
+  write_csv(df_feat_gated,
+            file=paste0(dir_out, "/feat_gated/feat_gated_", fn, ".csv"))
+
+  df_feat_comb <- df_feat_adaptive %>% select(matches("out of|file"))
+  write_csv(df_feat_comb,
+            file=paste0(dir_out, "/feat_combinations/feat_combinations_", fn, ".csv"))
+}
+
+
+get_thresholds_plot <- function(df_kdes, thresh) {
+  ct_plot <- c("Neutrophil CD16hi", "T cell CD4 Naive", "T cell CD4 Mem",
+               "T cell CD8 Naive", "T cell CD8 Mem",
                "B cell", "Monocyte Classical", "NK cell")
   ch_plot <- c("CD45RA", "CD27", "CD197", "CD4",
                "CD185", "CD183", "CD196",
-               "CD38", "HLA-DR", "IgD", "CD57", "CD161")
+               "CD38", "HLA-DR", "IgD", "CD56", "CD57", "CD161",
+               "CD25", "CD127")
 
   tmp <- tibble(channel=names(thresh), intensity=unname(thresh)) %>%
     filter(channel %in% ch_plot)
   p <- plot_kdes(df_kdes %>% filter(channel %in% ch_plot), ct_plot) +
     geom_vline(data=tmp, mapping=aes(xintercept=intensity), linetype="dashed")
-  ggsave(p, filename=paste0(dir_out, "gating/thresholds/", fn, ".png"), width=12, height=10)
+  return(p)
+}
 
-  n_tot <- length(which(!grepl("Debris|Doublet", cell_type)))
+
+get_feat_major <- function(cell_type, unq, fn) {
+  n_tot <- length(which(!grepl("Debris|Doublet|_", cell_type)))
 
   perc <- sapply(unq, function(ct) length(which(cell_type==ct))/n_tot)
   df_feat_maj <- tibble(ct=unq, perc=perc) %>%
     pivot_wider(names_from="ct", values_from="perc") %>%
-    mutate(`T cell` = `T cell CD4` + `T cell CD8` + `T cell DN` + `T cell gd`,
-           `Monocyte` = `Monocyte Classical` + `Monocyte Nonclassical`,
+    mutate(`T cell CD4` = rowSums(across(matches("T cell CD4"))),
+           `T cell CD8` = rowSums(across(matches("T cell CD8"))),
+           .keep="unused") %>%
+    mutate(`T cell` = rowSums(across(matches("T cell"))),
+           `Monocyte` = rowSums(across(matches("Monocyte"))),
+           `Neutrophil` = rowSums(across(matches("Neutrophil"))),
            file = fn) %>%
     mutate(across(contains("T cell "), ~.x/`T cell`)) %>%
     mutate(across(contains("Monocyte "), ~.x/`Monocyte`)) %>%
+    mutate(across(contains("Neutrophil "), ~.x/`Neutrophil`)) %>%
     relocate(file)
-  write_csv(df_feat_maj, file=paste0(dir_out, "/feat_major/feat_major_", fn, ".csv"))
-
-  cts <- intersect(unq, gate_hierarchy_full$Parent)
-
-  df_feat_adaptive <- lapply(cts, function(ct) {
-    if (!ct %in% unq) {
-      message(paste(ct, "missing!"))
-      return(NULL)
-    }
-
-    apply_gate_hierarchy(df, cell_type, mem_cd4, mem_cd8, thresh, dir_out, fn, ct)
-  }) %>% do.call(what=rbind) %>%
-    pivot_wider(names_from="feature", values_from="frac")
-
-  write_csv(df_feat_adaptive, file=paste0(dir_out, "/feat_adaptive/feat_adaptive_", fn, ".csv"))
+  return(df_feat_maj)
 }
 
 
-apply_gate_hierarchy <- function(df, cell_type, mem_cd4, mem_cd8, thresh,
+refine_subsets <- function(data_scaled, cell_type, ct, defs, only_pred=FALSE) {
+  cells <- which(cell_type==ct)
+  n_cells <- length(cells)
+
+  if(n_cells > 0) { # > 20
+    cols_cells <- intersect(names(defs), colnames(data_scaled))
+    x_cells <- data_scaled[cells,cols_cells,drop=FALSE]
+    pred_cells <- predict_cell_type(x_cells, defs)
+    cell_type[cells] <- pred_cells
+  }
+
+  if (only_pred)
+    return(pred_cells)
+
+  return(cell_type)
+}
+
+
+update_thresh_adhoc <- function(df, cell_type, unq, thresh, ct) {
+  if (ct == "T cell CD8") {
+    thresh["CD45RA"] <- get_thresh_opt(df, cell_type, unq, thresh, "CD45RA",
+                                       "T cell CD8 Mem", "T cell CD8 Naive")
+  }
+
+  if (ct == "T cell CD4") {
+    thresh["CD45RA"] <- get_thresh_opt(df, cell_type, unq, thresh, "CD45RA",
+                                       "T cell CD4 Mem", "T cell CD4 Naive")
+  }
+
+  if (ct == "B cell") {
+    thresh["CD38"] <- thresh["CD38"]/2
+  }
+
+  if (ct == "NK cell") {
+    x56 <- df %>%
+      filter(cell_type=="NK cell" & CD57 > 5*sinh(thresh["CD57"])) %>%
+      pull(CD56)
+    thresh["CD56"] <- asinh(quantile(x56,0.995)/5)
+
+    x16 <- df %>%
+      filter(cell_type=="NK cell") %>%
+      pull(CD16)
+    thresh["CD16"] <- 0.25*asinh(quantile(x16,0.999)/5)
+  }
+
+  return(thresh)
+}
+
+
+apply_gate_hierarchy <- function(df, cell_type, thresh,
                                  dir_out, fn, ct="T cell CD4") {
+  unq <- unique(cell_type)
+
+  thresh <- update_thresh_adhoc(df, cell_type, unq, thresh, ct)
+  thresh <- 5 * sinh(thresh)
 
   ##### parse hierarchy
   gate_hierarchy <- gate_hierarchy_full %>%
@@ -507,17 +733,13 @@ apply_gate_hierarchy <- function(df, cell_type, mem_cd4, mem_cd8, thresh,
 
   bf <- bfs(gr, root=ct, unreachable = FALSE)
   ord_gate <- V(gr)$name[bf$order[!is.na(bf$order)]]
-  group_by_gate <- setNames(c(ct, gate_hierarchy$GateGroup), c(ct,gate_hierarchy$GateName))
+  group_by_gate <- setNames(c(ct, gate_hierarchy$GateGroup),
+                            c(ct,gate_hierarchy$GateName))
   ord_group <- unique(unname(group_by_gate[ord_gate[-1]]))
 
-  if (ct == "T cell CD8" & length(table(mem_cd8)) == 2) {
-    thresh["CD45RA"] <- search_opt(x=df %>% filter(cell_type=="T cell CD8") %>% pull("CD45RA"),
-                                   class1_idx = which(mem_cd8=="T cell CD8 Mem"),
-                                   class2_idx = which(mem_cd8=="T cell CD8 Naive"))
-  }
-
   ##### apply gates
-  df_ct <- df %>% filter(cell_type == ct)
+  df_ct <- df %>% mutate(label=cell_type) %>%
+    filter(grepl(ct, label) & !grepl("Debris|_", label))
 
   ct_list <- lapply(ord_group, function(gn) rep("Not in parent", nrow(df_ct)))
   names(ct_list) <- ord_group
@@ -537,32 +759,19 @@ apply_gate_hierarchy <- function(df, cell_type, mem_cd4, mem_cd8, thresh,
 
     df_gated[[group_name]][parent_idx] <- "Ungated"
 
-    p <- gg_flow(df_parent, params=c(group_context$x_col, group_context$y_col), setlim=FALSE) +
+    p <- plot_bin2d(df_parent,
+                    channels = c(group_context$x_col, group_context$y_col),
+                    scales = c("asinh", "asinh")) +
       ggtitle(fn, subtitle=paste(group_name, "out of", parent_group))
 
     for (gate_name in group_context$gate_names) {
       context <- get_context(gate_name, gate_hierarchy)
+      gate <- get_gate_conditional(df_parent, context, thresh, gate_name)
 
-      if (grepl("Act", gate_name)) {
-        gate <- get_act_gate(df_parent, c(context$x_col, context$y_col), thresh)
-      } else if (grepl("Treg", gate_name)) {
-        gate <- get_treg_gate(df_parent, c(context$x_col, context$y_col), thresh)
-      } else {
-        gate <- get_rectangle_gate(df_parent, thresh, context)
-      }
-
-      if (gate_name == "T cell CD4 Naive") {
-        filt <- mem_cd4 == "T cell CD4 Naive"
-      } else if(gate_name == "T cell CD8 Naive") {
-        filt <- mem_cd8 == "T cell CD8 Naive"
-      } else {
-        filt <- apply_gate(df_parent, gate)
-      }
+      filt <- get_filter_conditional(df_parent, gate, gate_name)
       df_gated[[group_name]][parent_idx][which(filt)] <- gate_name
 
-      p <- p + geom_path(data=gate, color="red") +
-        annotate("label", x=mean(gate[[1]]), y=mean(gate[[2]]),
-                 label=gate_name, alpha=0.5)
+      p <- update_gate_plot(p, filt, gate, gate_name)
     }
 
     ggsave(p, filename=paste0(dir_out, "gating/", group_name, "/", fn, ".png"),
@@ -570,10 +779,41 @@ apply_gate_hierarchy <- function(df, cell_type, mem_cd4, mem_cd8, thresh,
   }
 
   df_gated <- simplify_gates(df_gated, gate_hierarchy, ord_group)
-
   df_feat <- tabulate_gate_groups(df_gated, ct)
-
   return(df_feat)
+}
+
+
+get_gate_conditional <- function(df_parent, context, thresh, gate_name) {
+  if (grepl("Act", gate_name)) {
+    gate <- get_act_gate(df_parent, c(context$x_col, context$y_col), thresh)
+  } else if (grepl("Treg", gate_name)) {
+    gate <- get_treg_gate(df_parent, c(context$x_col, context$y_col), thresh)
+  } else {
+    gate <- get_rectangle_gate(df_parent, thresh, context)
+  }
+  return(gate)
+}
+
+
+get_filter_conditional <- function(df_parent, gate, gate_name) {
+  pattern <- "CD4 Naive|CD8 Naive"
+  if (grepl(pattern, gate_name)) {
+    filt <- df_parent$label==gate_name
+  } else {
+    filt <- apply_gate(df_parent, gate) & !grepl(pattern, df_parent$label)
+  }
+  return(filt)
+}
+
+
+update_gate_plot <- function(p, filt, gate, gate_name) {
+  rat <- length(which(filt))/length(filt)
+  label <- paste0(gate_name, "\n", round(100*rat,2), "%")
+  p <- p + geom_path(data=gate, color="red") +
+    annotate("label", x=mean(gate[[1]]), y=mean(gate[[2]]),
+             label=label, alpha=0.5)
+  return(p)
 }
 
 
@@ -582,8 +822,10 @@ simplify_gates <- function(df_gated, gate_hierarchy, ord_group) {
   if (length(nonrep_gates)==0)
     return(df_gated)
 
-  target_grps <- gate_hierarchy %>% filter(Parent %in% nonrep_gates) %>% pull(GateGroup) %>% unique()
-  parent_grps <- gate_hierarchy %>% filter(GateName %in% nonrep_gates) %>% pull(GateGroup)
+  target_grps <- gate_hierarchy %>% filter(Parent %in% nonrep_gates) %>%
+    pull(GateGroup) %>% unique()
+  parent_grps <- gate_hierarchy %>% filter(GateName %in% nonrep_gates) %>%
+    pull(GateGroup)
 
   ord <- match(ord_group, target_grps)
   ord <- rev(ord[which(!is.na(ord))])
@@ -603,31 +845,7 @@ simplify_gates <- function(df_gated, gate_hierarchy, ord_group) {
 }
 
 
-separate_mem <- function(x_full, cell_type, ct="T cell CD8") {
-  cell_idx <- which(cell_type==ct)
-
-  if (ct == "T cell CD8") {
-    defs <- defs_cd8_naive
-  } else {
-    defs <- defs_cd4_naive
-  }
-  channels <- intersect(names(defs), colnames(x_full))
-
-  dat <- x_full[cell_idx,channels]
-  probs <- predict_cell_type(dat, defs, return_probs = TRUE)
-  lab <- unique(colnames(probs))
-
-  probs_simple <- lapply(lab, function(col) {
-    apply(probs[,which(colnames(probs)==col),drop=FALSE], 1, sum)
-  }) %>% do.call(what=cbind)
-
-  conf_mem <- apply(probs_simple, 1, max)
-  pred_mem <- lab[apply(probs_simple, 1, which.max)]
-  return(pred_mem)
-}
-
-
-search_opt <- function(x, class1_idx, class2_idx, size=20) {
+search_opt <- function(x, class1_idx, class2_idx, w, size=20) {
   candidates <- seq(from=min(x), to=max(x), length.out=size)[seq(2,size-1)]
 
   scores <- sapply(candidates, function(cand) {
@@ -639,7 +857,7 @@ search_opt <- function(x, class1_idx, class2_idx, size=20) {
 
     tnr <- tn / (tn + fp)
     tpr <- tp / (tp + fn)
-    return((tnr+tpr)/2)
+    return((w[1]*tnr+w[2]*tpr)/(2*sum(w)))
   })
 
   return(candidates[which.max(scores)])
@@ -685,6 +903,17 @@ cross_perc <- function(perc_mat, ct) {
 }
 
 
+filter_bead_gaussian_live <- function(df_raw, event_type) {
+  channels_remove <- "Time|Bead|Live|Center|Offset|Residual|Width"
+  channels_keep <- names(df_raw)[!grepl(channels_remove, names(df_raw))]
+
+  df <- df_raw %>%
+    filter(event_type == "") %>%
+    select(all_of(channels_keep))
+  return(df)
+}
+
+
 tabulate_group_single <- function(col) {
   tab <- table(col)
   in_parent <- setdiff(names(tab), "Not in parent")
@@ -700,45 +929,50 @@ get_treg_gate <- function(df, params, thresh) {
   t1 <- thresh[params[1]]
   t2 <- thresh[params[2]]
   M <- max(df[[params[1]]])
-  delta_x <- min(t2, M-t1)
+  delta_x <- min(asinh(t2/5), asinh(M/5)-asinh(t1/5))
 
-  gate <- tibble(var1 = c(t1, t1+delta_x, M, M, t1, t1),
-                 var2 = c(t2, t2+delta_x, t2+delta_x, 0, 0, t2))
+  gate <- tibble(var1 = c(t1, 5*sinh(asinh(t1/5)+delta_x), M, M, t1, t1),
+                 var2 = c(t2, 5*sinh(asinh(t2/5)+delta_x), 5*sinh(asinh(t2/5)+delta_x), 0, 0, t2))
   names(gate) <- params
   return(gate)
 }
 
 
 get_act_gate <- function(df, params, thresh) {
-  t1 <- thresh[params[1]]
-  t2 <- thresh[params[2]]
+  t1 <- asinh(thresh[params[1]]/5)
+  t2 <- asinh(thresh[params[2]]/5)
   M1 <- max(df[[params[1]]])
   M2 <- max(df[[params[2]]])
 
-  gate <- tibble(var1 = c(M1, 0.9*t1, 0.9*t1, 1.25*t1, M1, M1),
-                 var2 = c(M2, M2, 1.25*t2, 0.75*t2, 0.75*t2, M2))
+  gate <- tibble(var1 = c(M1, 5*sinh(0.9*t1), 5*sinh(0.9*t1), 5*sinh(1.25*t1), M1, M1),
+                 var2 = c(M2, M2, 5*sinh(1.25*t2), 5*sinh(0.75*t2), 5*sinh(0.75*t2), M2))
   names(gate) <- params
   return(gate)
 }
 
 
-estimate_distributions <- function(cell_type, df, fn,
-                                   channels, cell_types) {
+estimate_distributions <- function(cell_type, data_transf, fn) {
+
+  cell_types <- c("Neutrophil CD16hi", "Eosinophil", "Basophil", "B cell",
+                  "Monocyte Classical", "T cell gd", "NK cell",
+                  "T cell CD4 Naive", "T cell CD4 Mem",
+                  "T cell CD8 Naive", "T cell CD8 Mem")
+  channels <- setdiff(colnames(data_transf), c("DNA1", "DNA2", "Event_length"))
 
   tab <- table(cell_type)
-  to_use <- intersect(cell_types, names(which(tab > 100)))
+  to_use <- intersect(cell_types, names(which(tab > 50)))
   to_use <- union(to_use, "all")
 
   df_kdes <- lapply(to_use, function(ct) {
 
     if (ct == "all") {
-      cells <- which(!grepl("Debris|Doublet", cell_type))
+      cells <- which(!grepl("Debris|Doublet|_", cell_type))
     } else {
       cells <- which(cell_type == ct)
     }
 
     lapply(channels, function(ch) {
-      x <- df[[ch]][cells]
+      x <- data_transf[cells,ch]
       kde <- bkde(x, range.x=c(-1,8), gridsize = 101L)
 
       return(tibble(file=fn, cell_type=ct, channel=ch,
@@ -748,43 +982,6 @@ estimate_distributions <- function(cell_type, df, fn,
   }) %>% do.call(what=rbind)
 
   return(df_kdes)
-}
-
-
-get_one_th_fd <- function(df, cell_type, ct, channel) {
-  x <- df %>% filter(cell_type==ct & .data[[channel]]>0) %>% pull(channel)
-  threshold <- 0
-
-  tryCatch({
-    threshold <- deGate(x, channel)
-  },
-  error = function(cond) {
-    message(paste0("Density gating failed for ", channel, " in ", ct))
-  })
-
-  q <- quantile(x,0.999)
-  m <- 0.35*q
-  M <- 0.65*q
-  threshold <- min(M, max(m, threshold))
-
-  return(threshold)
-}
-
-
-get_thresholds_density <- function(df, cell_type, conf_cell) {
-  thresh <- setNames(rep(0, length(df)), names(df))
-  tab <- table(cell_type)
-
-  if ("NK cell" %in% names(tab)) {
-    thresh["CD57"] <- get_one_th_fd(df, cell_type, "NK cell", "CD57")
-  }
-
-  if ("T cell CD4" %in% names(tab)) {
-    thresh["CD185"] <- get_one_th_fd(df, cell_type, "T cell CD4", "CD185")
-    thresh["CD183"] <- get_one_th_fd(df, cell_type, "T cell CD4", "CD183")
-  }
-
-  return(thresh)
 }
 
 
@@ -896,5 +1093,106 @@ apply_gate <- function(df, gate) {
                           gate %>% pull(x_col),
                           gate %>% pull(y_col))
   return(pip > 0)
+}
+
+
+clean_fcs_file <- function(ff, event_type) {
+  pattern <- "Debris|Doublet|_|Bead|Offset|Residual|Width|Center|Dead"
+  cell_idx <- which(!grepl(pattern, event_type))
+  ff_clean <- ff[cell_idx,]
+  return(ff_clean)
+}
+
+
+get_isotope_mass <- function(pdata) {
+  idx <- which(grepl("_", pdata$desc) & !grepl("Bead|Live|DNA", pdata$desc))
+  mark <- pdata$desc[idx] %>% str_split("_") %>% sapply("[",2)
+  iso <- pdata$desc[idx] %>% str_split("_") %>% sapply("[",1)
+  mass <- as.numeric(gsub("([0-9]+).*$", "\\1", iso))
+  return(setNames(mass,mark))
+}
+
+
+check_correlations <- function(df, pdata, data_scaled, cell_type, fn, dir_out,
+                               cutoff=0.6) {
+
+  cell_types <- c("Neutrophil CD16hi", "B cell",
+                  "Monocyte Classical", "NK cell",
+                  "T cell CD4 Naive", "T cell CD4 Mem",
+                  "T cell CD8 Naive", "T cell CD8 Mem")
+  channels <- setdiff(names(df), c("DNA1", "DNA2", "Event_length"))
+  channel_pairs <- combn(channels,2)
+  channel_pairs <- channel_pairs[,which(!(grepl("CD45",channel_pairs[1,]) &
+                                          grepl("CD45", channel_pairs[2,])))]
+  n <- ncol(channel_pairs)
+
+  df_cor <- lapply(cell_types, function(ct) {
+    cells <- which(cell_type==ct)
+
+    if (length(cells) < 100)
+      return(NULL)
+
+    data_cells <- data_scaled[cells,]
+
+    cors <- lapply(seq(n), function(pair_index) {
+      ch1 <- channel_pairs[1,pair_index]
+      ch2 <- channel_pairs[2,pair_index]
+      r <- cor(data_cells[,ch1], data_cells[,ch2])
+      return(r)
+    }) %>% do.call(what=c)
+    return(tibble(cell_type=ct,
+                  ch1=channel_pairs[1,],
+                  ch2=channel_pairs[2,],
+                  r=cors))
+  }) %>% do.call(what=rbind) %>%
+    arrange(-r, ch1, ch2) %>%
+    mutate(file=fn) %>%
+    relocate(file)
+
+  df_pairs <- df_cor %>%
+    filter(r>cutoff) %>%
+    select(ch1, ch2) %>%
+    unique()
+
+  df_plot <- df %>% mutate(`Cell Type`=cell_type) %>%
+    filter(`Cell Type` %in% cell_types)
+
+  iso_mass <- get_isotope_mass(pdata)
+
+  for (pair_index in seq(nrow(df_pairs))) {
+    plot_correlation_pair(df_pairs, df_cor, df_plot, pair_index,
+                          iso_mass, dir_out, fn, cutoff)
+  }
+
+  return(df_cor)
+}
+
+
+plot_correlation_pair <- function(df_pairs, df_cor, df_plot, pair_index,
+                                  iso_mass, dir_out, fn, cutoff) {
+  chan1 <- df_pairs$ch1[pair_index]
+  chan2 <- df_pairs$ch2[pair_index]
+
+  df_annot <- df_cor %>% mutate(`Cell Type`=cell_type) %>%
+    filter(ch1==chan1 & ch2==chan2) %>%
+    mutate(label = paste0("r=",round(r,2)))
+  m1 <- asinh(min(df_plot[[chan1]])/5)
+  m2 <- asinh(min(df_plot[[chan2]])/5)
+  M1 <- asinh(max(df_plot[[chan1]])/5)
+  M2 <- asinh(max(df_plot[[chan2]])/5)
+
+  p <- plot_bin2d(df_plot, channels = c(chan1, chan2),
+                  scales = c("asinh", "asinh")) +
+    geom_label(data=df_annot, x=0.5*(m1+M1), y=0.9*M2+0.1*m2,
+               aes(label=label, color=r>cutoff), alpha=0.5) +
+    scale_color_manual(values=setNames(c("red", "black"), c("TRUE", "FALSE"))) +
+    guides(color="none") +
+    facet_wrap(~`Cell Type`, ncol=4) +
+    ggtitle(label=fn, subtitle=paste0(chan1, " vs ", chan2, "; mass diff: |",
+                                      iso_mass[chan1], "-", iso_mass[chan2],
+                                      "|=", abs(iso_mass[chan1]-iso_mass[chan2])))
+  filename <- paste0(dir_out, "correlations_figs/", fn, "_",
+                     chan1, "_", chan2, ".png")
+  ggsave(p, filename=filename, width=12, height=6)
 }
 
