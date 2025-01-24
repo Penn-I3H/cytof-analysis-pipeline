@@ -264,6 +264,12 @@ plot_dna_cd45 <- function(df, fn) {
 
 classify_cells_logit <- function(data_scaled, defs_major) {
   pred_probs <- predict_cell_type(data_scaled, defs_major, return_probs = TRUE)
+  uniq <- unique(colnames(pred_probs))
+  pred_probs <- lapply(uniq, function(ct) {
+    apply(pred_probs[,which(colnames(pred_probs)==ct),drop=FALSE], 1, sum)
+  }) %>% do.call(what=cbind)
+  colnames(pred_probs) <- uniq
+  # return(pred_probs)
   cell_type <- colnames(pred_probs)[unname(apply(pred_probs, 1, which.max))]
   confidence <- apply(pred_probs, 1, function(row) {
     sor <- sort(row, decreasing=TRUE)
@@ -610,10 +616,17 @@ gate_detailed_phenos <- function(df, data_scaled, data_transf, cell_type, dir_ou
 
     apply_gate_hierarchy(df, cell_type, thresh, dir_out, fn, ct)
   }) %>% do.call(what=rbind) %>%
-    pivot_wider(names_from="feature", values_from="frac")
+    pivot_wider(names_from="feature", values_from="frac") %>%
+    mutate(file=fn) %>%
+    relocate(file)
 
-  write_csv(df_feat_adaptive,
-            file=paste0(dir_out, "/feat_adaptive/feat_adaptive_", fn, ".csv"))
+  df_feat_gated <- df_feat_adaptive %>% select(!contains("out of"))
+  write_csv(df_feat_gated,
+            file=paste0(dir_out, "/feat_gated/feat_gated_", fn, ".csv"))
+
+  df_feat_comb <- df_feat_adaptive %>% select(matches("out of|file"))
+  write_csv(df_feat_comb,
+            file=paste0(dir_out, "/feat_combinations/feat_combinations_", fn, ".csv"))
 }
 
 
@@ -1090,4 +1103,96 @@ clean_fcs_file <- function(ff, event_type) {
   return(ff_clean)
 }
 
+
+get_isotope_mass <- function(pdata) {
+  idx <- which(grepl("_", pdata$desc) & !grepl("Bead|Live|DNA", pdata$desc))
+  mark <- pdata$desc[idx] %>% str_split("_") %>% sapply("[",2)
+  iso <- pdata$desc[idx] %>% str_split("_") %>% sapply("[",1)
+  mass <- as.numeric(gsub("([0-9]+).*$", "\\1", iso))
+  return(setNames(mass,mark))
+}
+
+
+check_correlations <- function(df, pdata, data_scaled, cell_type, fn, dir_out,
+                               cutoff=0.6) {
+
+  cell_types <- c("Neutrophil CD16hi", "B cell",
+                  "Monocyte Classical", "NK cell",
+                  "T cell CD4 Naive", "T cell CD4 Mem",
+                  "T cell CD8 Naive", "T cell CD8 Mem")
+  channels <- setdiff(names(df), c("DNA1", "DNA2", "Event_length"))
+  channel_pairs <- combn(channels,2)
+  channel_pairs <- channel_pairs[,which(!(grepl("CD45",channel_pairs[1,]) &
+                                          grepl("CD45", channel_pairs[2,])))]
+  n <- ncol(channel_pairs)
+
+  df_cor <- lapply(cell_types, function(ct) {
+    cells <- which(cell_type==ct)
+
+    if (length(cells) < 100)
+      return(NULL)
+
+    data_cells <- data_scaled[cells,]
+
+    cors <- lapply(seq(n), function(pair_index) {
+      ch1 <- channel_pairs[1,pair_index]
+      ch2 <- channel_pairs[2,pair_index]
+      r <- cor(data_cells[,ch1], data_cells[,ch2])
+      return(r)
+    }) %>% do.call(what=c)
+    return(tibble(cell_type=ct,
+                  ch1=channel_pairs[1,],
+                  ch2=channel_pairs[2,],
+                  r=cors))
+  }) %>% do.call(what=rbind) %>%
+    arrange(-r, ch1, ch2) %>%
+    mutate(file=fn) %>%
+    relocate(file)
+
+  df_pairs <- df_cor %>%
+    filter(r>cutoff) %>%
+    select(ch1, ch2) %>%
+    unique()
+
+  df_plot <- df %>% mutate(`Cell Type`=cell_type) %>%
+    filter(`Cell Type` %in% cell_types)
+
+  iso_mass <- get_isotope_mass(pdata)
+
+  for (pair_index in seq(nrow(df_pairs))) {
+    plot_correlation_pair(df_pairs, df_cor, df_plot, pair_index,
+                          iso_mass, dir_out, fn, cutoff)
+  }
+
+  return(df_cor)
+}
+
+
+plot_correlation_pair <- function(df_pairs, df_cor, df_plot, pair_index,
+                                  iso_mass, dir_out, fn, cutoff) {
+  chan1 <- df_pairs$ch1[pair_index]
+  chan2 <- df_pairs$ch2[pair_index]
+
+  df_annot <- df_cor %>% mutate(`Cell Type`=cell_type) %>%
+    filter(ch1==chan1 & ch2==chan2) %>%
+    mutate(label = paste0("r=",round(r,2)))
+  m1 <- asinh(min(df_plot[[chan1]])/5)
+  m2 <- asinh(min(df_plot[[chan2]])/5)
+  M1 <- asinh(max(df_plot[[chan1]])/5)
+  M2 <- asinh(max(df_plot[[chan2]])/5)
+
+  p <- plot_bin2d(df_plot, channels = c(chan1, chan2),
+                  scales = c("asinh", "asinh")) +
+    geom_label(data=df_annot, x=0.5*(m1+M1), y=0.9*M2+0.1*m2,
+               aes(label=label, color=r>cutoff), alpha=0.5) +
+    scale_color_manual(values=setNames(c("red", "black"), c("TRUE", "FALSE"))) +
+    guides(color="none") +
+    facet_wrap(~`Cell Type`, ncol=4) +
+    ggtitle(label=fn, subtitle=paste0(chan1, " vs ", chan2, "; mass diff: |",
+                                      iso_mass[chan1], "-", iso_mass[chan2],
+                                      "|=", abs(iso_mass[chan1]-iso_mass[chan2])))
+  filename <- paste0(dir_out, "correlations_figs/", fn, "_",
+                     chan1, "_", chan2, ".png")
+  ggsave(p, filename=filename, width=12, height=6)
+}
 

@@ -89,11 +89,18 @@ analyze_cytof_file <- function(file, dir_in, dir_out, cols, cofactor=5) {
   write.FCS(ff_clean, paste0(dir_out, "fcs_clean/", fn, "_cleaned.fcs"))
 
   df_file <- tibble(event_type=event_type)
-  write_csv(df_file, file=paste0(dir_out, "files_labeled/", fn, ".csv"), progress=FALSE)
+  write_csv(df_file, progress=FALSE,
+            file=paste0(dir_out, "files_labeled/", fn, "_labeled.csv"))
 
   ### Compute density estimates to be used later for QC ###
   df_kdes <- estimate_distributions(cell_type, data_transf, fn)
-  write_csv(df_kdes, file=paste0(dir_out, "/kdes_for_qc/kdes_", fn, ".csv"), progress=FALSE)
+  write_csv(df_kdes, progress=FALSE,
+            file=paste0(dir_out, "/kdes_for_qc/kdes_", fn, ".csv"))
+
+  df_cor_high <- check_correlations(df, ff@parameters@data, data_scaled,
+                                    cell_type, fn, dir_out, cutoff = 0.7)
+  write_csv(df_cor_high, progress=FALSE,
+            file=paste0(dir_out, "/correlations_flagged/corr_", fn, ".csv"))
 
   print(paste("Finished file", fn, "!"))
   return(NULL)
@@ -110,10 +117,13 @@ create_dirs <- function(dir_out) {
   dir.create(paste0(dir_out, "/fcs_clean"), showWarnings = FALSE)
 
   dir.create(paste0(dir_out, "/feat_major"), showWarnings = FALSE)
-  dir.create(paste0(dir_out, "/feat_adaptive"), showWarnings = FALSE)
+  dir.create(paste0(dir_out, "/feat_gated"), showWarnings = FALSE)
+  dir.create(paste0(dir_out, "/feat_combinations"), showWarnings = FALSE)
   dir.create(paste0(dir_out, "/kdes_for_qc"), showWarnings = FALSE)
   dir.create(paste0(dir_out, "/cleanup_gates"), showWarnings = FALSE)
   dir.create(paste0(dir_out, "/cleanup_stats"), showWarnings = FALSE)
+  dir.create(paste0(dir_out, "/correlations_flagged"), showWarnings = FALSE)
+  dir.create(paste0(dir_out, "/correlations_figs"), showWarnings = FALSE)
 
   dir.create(paste0(dir_out, "/umap_major"), showWarnings = FALSE)
   dir.create(paste0(dir_out, "/umap_markers"), showWarnings = FALSE)
@@ -130,7 +140,7 @@ create_dirs <- function(dir_out) {
   }
 
   dir.create(paste0(dir_out, "/backgating"), showWarnings = FALSE)
-  for (n in c("CD45RA CD27", "CD45 CD66b",
+  for (n in c("CD45RA CD27", "CD45 CD66b", "CD38 CD27",
               "CD4 CD8a", "CD3 CD19", "CD11c CD14", "CD3 CD56",
               "CD16 CD66b", "CD123 CD294", "CD3 TCRgd", "CD14 CD38")) {
     dir.create(paste0(dir_out, "/backgating/", n), showWarnings = FALSE)
