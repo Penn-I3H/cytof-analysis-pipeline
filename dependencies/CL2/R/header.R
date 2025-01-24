@@ -1,5 +1,3 @@
-#' @useDynLib CL2, .registration = TRUE
-#' @importFrom Rcpp evalCpp
 #' @import ggplot2
 #' @importFrom magrittr "%>%"
 #' @import dplyr
@@ -10,7 +8,6 @@
 #' @importFrom flowCore read.FCS flowFrame write.FCS
 #' @importFrom KernSmooth bkde
 #' @importFrom uwot umap
-#' @importFrom RcppHNSW hnsw_knn
 #' @importFrom reshape2 melt
 #' @importFrom RColorBrewer brewer.pal
 #' @importFrom igraph graph_from_edgelist cluster_leiden V E E<- distances
