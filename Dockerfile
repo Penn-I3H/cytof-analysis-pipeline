@@ -33,13 +33,15 @@ RUN Rscript -e "install.packages('Matrix', type = 'source')"
 RUN Rscript -e "install.packages('irlba', type = 'source')"
 
 # various dependencies
-RUN Rscript -e "install.packages(c('KernSmooth', 'patchwork', 'uwot', 'ash', 'RColorBrewer', 'reshape2', 'sp', 'parallel', 'scales'), Ncpus = 10, dependencies=TRUE)"
+RUN Rscript -e "install.packages(c('KernSmooth', 'patchwork', 'uwot', 'ash', 'RColorBrewer', 'reshape2', 'sp', 'parallel', 'scales', 'remotes'), Ncpus = 10, dependencies=TRUE)"
 
 # igraph
 RUN Rscript -e "install.packages(c('igraph'), Ncpus = 10, dependencies=TRUE)"
 
 # Cleanet
-RUN Rscript -e "install.packages(c('Cleanet'), Ncpus = 10, dependencies=TRUE)"
+# RUN Rscript -e "install.packages(c('Cleanet'), Ncpus = 10, dependencies=TRUE)"
+RUN Rscript -e "remotes::install_github('https://github.com/matei-ionita/Cleanet')"
+RUN Rscript -e "library(Cleanet)" # sanity check
 
 # flowCore and its prerequisites
 RUN Rscript -e "install.packages(c('BiocManager'), Ncpus=10)"
